@@ -1,6 +1,9 @@
 package com.benlawrencem.net.nightingale;
 
+import java.nio.ByteBuffer;
+
 public class Packet {
+	private static final int HEADER_SIZE = 17;
 	private static final int PROTOCOL_ID = 103675707;
 	public static final int ANONYMOUS_CONNECTION_ID = 0, MINIMUM_CONNECTION_ID = 1, MAXIMUM_CONNECTION_ID = 255;
 	public static final int SEQUENCE_NUMBER_NOT_APPLICALBE = 0, MINIMUM_SEQUENCE_NUMBER = 1, MAXIMUM_SEQUENCE_NUMBER = 65535;
@@ -122,8 +125,18 @@ public class Packet {
 	}
 
 	public byte[] toByteArray() {
-		//TODO implement
-		return null;
+		ByteBuffer buffer = ByteBuffer.allocate(HEADER_SIZE + (message == null ? 0 : message.length()));
+		/*buffer.putInt(protocolId);
+		buffer.put(connectionId);
+		buffer.putShort(sequenceNumber);
+		buffer.putShort(duplicateSequenceNumber);
+		buffer.putShort(lastReceivedSequenceNumber);
+		buffer.putInt(packetFlags);
+		buffer.put(flags);
+		buffer.put(messageType);
+		buffer.put(message.getBytes());*/
+		//TODO convert data types
+		return buffer.array();
 	}
 
 	//TODO finish reimplementing methods
