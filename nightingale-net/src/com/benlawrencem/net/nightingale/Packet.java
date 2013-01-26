@@ -66,6 +66,8 @@ public class Packet {
 		this.connectionId = connectionId;
 		this.messageType = messageType;
 		this.message = message;
+		if(this.message != null && this.message.equals(""))
+			this.message = null;
 	}
 
 	public boolean isValidProtocol() {
@@ -150,6 +152,8 @@ public class Packet {
 
 	public void setMessage(String message) {
 		this.message = message;
+		if(this.message != null && this.message.equals(""))
+			this.message = null;
 	}
 
 	public byte[] toByteArray() throws PacketEncodingException {
@@ -168,6 +172,7 @@ public class Packet {
 	}
 
 	public String toString() {
+		int columnSize = 20;
 		byte[] bytes;
 		try {
 			bytes = toByteArray();
@@ -178,50 +183,46 @@ public class Packet {
 		}
 		String s = "Packet Size:     " + bytes.length + (bytes.length == 1 ? " byte" : " bytes");
 
-		s += "\nProtocol Id:     ";
+		s += "\nProtocol Id:     " + col((isValidProtocol() ? "VALID" : " -- INVALID"), columnSize);
 		for(int i = 0; i < 4 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + protocolId + (isValidProtocol() ? "" : " -- INVALID") + ")";
 
-		s += "\nConnection Id:   ";
+		s += "\nConnection Id:   " + col((isAnonymousConnection() ? "ANONYMOUS" : "" + connectionId), columnSize);
 		for(int i = 4; i < 5 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (isAnonymousConnection() ? "ANONYMOUS" : connectionId) + ")";
 
-		s += "\nSequence Number: ";
+		s += "\nSequence Number: " + col((hasSequenceNumber() ? "" + sequenceNumber : "N/A"), columnSize);
 		for(int i = 5; i < 7 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (hasSequenceNumber() ? sequenceNumber : "N/A") + ")";
 
-		s += "\nDuplicate Of:    ";
+		s += "\nDuplicate Of:    " + col((isDuplicate() ? "" + duplicateSequenceNumber : "N/A"), columnSize);
 		for(int i = 7; i < 9 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (isDuplicate() ? duplicateSequenceNumber : "N/A") + ")";
 
-		s += "\nLast Received:   ";
+		s += "\nLast Received:   " + col((hasReceivedPacketHistory() ? "" + lastReceivedSequenceNumber : "N/A"), columnSize);
 		for(int i = 9; i < 11 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (hasReceivedPacketHistory() ? lastReceivedSequenceNumber : "N/A") + ")";
 
-		s += "\nPacket History:  ";
+		s += "\nPacket History:  " + col("" + receivedPacketHistory, columnSize);
 		for(int i = 11; i < 15 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + receivedPacketHistory + ")";
 
-		s += "\nPacket Flags:    ";
+		s += "\nPacket Flags:    " + col((isImmediateResponse() ? "IMMEDIATE" : "NOT IMMEDIATE"), columnSize);
 		for(int i = 15; i < 16 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (isImmediateResponse() ? "IMMEDIATE" : "NOT IMMEDIATE") + ")";
 
-		s += "\nMessage Type:    ";
+		s += "\nMessage Type:    " + col("" + messageType, columnSize);
 		for(int i = 16; i < 17 && i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + messageType + ")";
 
-		s += "\nMessage:         ";
+		if(message != null && message.length() > columnSize - 3) {
+			s += "\nMessage:         " + (message == null ? "null" : "\"" + message + "\"");
+			s += "\n                 ";
+		}
+		else
+			s += "\nMessage:         " + col((message == null ? "null" : "\"" + message + "\""), columnSize);
 		for(int i = 17; i < bytes.length; i++)
 			s += toByteString(bytes[i]) + " ";
-		s += "(" + (message == null ? "null" : "\"" + message + "\"") + ")";
 		return s;
 	}
 
@@ -232,24 +233,34 @@ public class Packet {
 		return s;
 	}
 
+	private String col(String s, int width) {
+		if(s == null)
+			s = "";
+		if(s.length() >= width)
+			s = s.substring(0, width - 1);
+		while(s.length() < width)
+			s = s + " ";
+		return s;
+	}
+
 	private static byte encodeConnectionId(int connectionId) throws ConnectionIdOutOfRangeException {
 		if(connectionId != Packet.ANONYMOUS_CONNECTION_ID && (connectionId < Packet.MINIMUM_CONNECTION_ID || connectionId > Packet.MAXIMUM_CONNECTION_ID))
 			throw new ConnectionIdOutOfRangeException(connectionId);
-		return (byte) (connectionId > Byte.MAX_VALUE ? connectionId - 2*Byte.MAX_VALUE : connectionId);
+		return (byte) (connectionId > Byte.MAX_VALUE ? connectionId + 2*Byte.MIN_VALUE : connectionId);
 	}
 
 	private static int decodeConnectionId(byte connectionId) {
-		return (int) (connectionId < 0 ? connectionId + 2*Byte.MAX_VALUE : connectionId);
+		return (int) (connectionId < 0 ? connectionId - 2*Byte.MIN_VALUE : connectionId);
 	}
 
 	private static short encodeSequenceNumber(int sequenceNumber) throws SequenceNumberOutOfRangeException {
 		if(sequenceNumber != Packet.SEQUENCE_NUMBER_NOT_APPLICABLE && (sequenceNumber < Packet.MINIMUM_SEQUENCE_NUMBER || sequenceNumber > Packet.MAXIMUM_SEQUENCE_NUMBER))
 			throw new SequenceNumberOutOfRangeException(sequenceNumber);
-		return (short) (sequenceNumber > Short.MAX_VALUE ? sequenceNumber - 2*Short.MAX_VALUE : sequenceNumber);
+		return (short) (sequenceNumber > Short.MAX_VALUE ? sequenceNumber + 2*Short.MIN_VALUE : sequenceNumber);
 	}
 
 	private static int decodeSequenceNumber(short sequenceNumber) {
-		return (int) (sequenceNumber < 0 ? sequenceNumber + 2*Short.MAX_VALUE : sequenceNumber);
+		return (int) (sequenceNumber < 0 ? sequenceNumber - 2*Short.MIN_VALUE : sequenceNumber);
 	}
 
 	private static byte encodeMessageType(MessageType messageType) {
@@ -346,6 +357,8 @@ public class Packet {
 			packet.isImmediateResponse = true;
 		packet.messageType = decodeMessageType(buffer.get());
 		packet.message = new String(bytes).substring(Packet.HEADER_SIZE, length);
+		if(packet.message != null && packet.message.equals(""))
+			packet.message = null;
 		return packet;
 	}
 

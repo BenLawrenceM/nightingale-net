@@ -2,10 +2,14 @@ package com.benlawrencem.net.nightingale.test;
 
 
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
 import com.benlawrencem.net.nightingale.Packet;
+import com.benlawrencem.net.nightingale.Packet.MalformedPacketException;
+import com.benlawrencem.net.nightingale.Packet.MessageType;
+import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
 import junit.framework.TestCase;
 
@@ -26,65 +30,127 @@ public class PacketTest extends TestCase {
 	public void setUp() throws Exception {
 		//parse packets from byte arrays
 		allZeroesPacket = Packet.parsePacket(new byte[] {
-				0, 0, 0, 0, //protocol id (INVALID)
-				0, //connection id (0)
-				0, 0, //sequence number (0)
-				0, 0, //duplicate sequence number (0)
-				0, 0,
-				0, 0, 0, 0,
-				0,
-				0
+				0, 0, 0, 0,			//Protocol Id:     0 -- INVALID
+				0,					//Connection Id:   ANONYMOUS
+				0, 0,				//Sequence Number: N/A
+				0, 0,				//Duplicate Of:    N/A
+				0, 0,				//Last Received:   N/A
+				0, 0, 0, 0,			//Packet History:  0
+				0,					//Packet Flags:    NOT IMMEDIATE
+				0					//Message Type:    INVALID
+									//Message:         null
 		});
 		protocolValidPacket = Packet.parsePacket(new byte[] {
-				6, 45, -9, 59, //protocol id
-				-117, //connection id (137)
-				43, 81, //sequence number (11089)
-				0, 20, //duplicate sequence number (20)
-				0, 0,
-				0, 0, 0, 0,
-				0,
-				0
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-117,				//Connection Id:   139
+				43, 81,				//Sequence Number: 11089
+				0, 20,				//Duplicate Of:    20
+				-119, 119,			//Last Received:   35191
+				42, -78, 0, -11,	//Packet History:  716308725
+				-128,				//Packet Flags:    IMMEDIATE
+				-127				//Message Type:    PING
+									//Message:         null
 		});
 		protocolInvalidPacket = Packet.parsePacket(new byte[] {
-				-50, 2, 5, 81, //protocol id (INVALID)
-				24, //connection id (24)
-				-110, 26, //sequence number (37400)
-				-50, -104, //duplicate sequence number (52886)
-				0, 0,
-				0, 0, 0, 0,
-				0,
-				0
+				-50, 2, 5, 81,		//Protocol Id:     -838728367 -- INVALID
+				24,					//Connection Id:   24
+				-110, 26,			//Sequence Number: 37402
+				-50, -104,			//Duplicate Of:    52888
+				26, -47,			//Last Received:   6865
+				12, 15, 108, -82,	//Packet History:  202337454
+				0,					//Packet Flags:    NOT IMMEDIATE
+				0					//Message Type:    INVALID
+									//Message:         null
 		});
-
-		//create packets with different message types
-		applicationPacketHelloWorld = Packet.createApplicationPacket(0, "Hello world!");
-		connectionAcceptedPacket = Packet.createConnectionAcceptedPacket(82);
-		clientDisconnectPacket = Packet.createClientDisconnectPacket(1);
-		connectionRefusedPacket = Packet.createConnectionRefusedPacket();
-		connectRequestPacket = Packet.createConnectRequestPacket();
-		forceDisconnectPacket = Packet.createForceDisconnectPacket(200);
-		pingPacket = Packet.createPingPacket(254);
-		pingResponsePacket = Packet.createPingResponsePacket(255);
-
-		//add sequence numbers
-		applicationPacketHelloWorld.setSequenceNumber(81);
-		clientDisconnectPacket.setSequenceNumber(9557);
-		connectionAcceptedPacket.setSequenceNumber(2764);
-		connectionRefusedPacket.setSequenceNumber(65534);
-		connectRequestPacket.setSequenceNumber(65535);
-		forceDisconnectPacket.setSequenceNumber(0);
-		pingPacket.setSequenceNumber(1);
-		pingResponsePacket.setSequenceNumber(4);
-
-		//add duplicate sequence numbers
-		applicationPacketHelloWorld.setDuplicateSequenceNumber(65535);
-		clientDisconnectPacket.setDuplicateSequenceNumber(65534);
-		connectionAcceptedPacket.setDuplicateSequenceNumber(1);
-		connectionRefusedPacket.setDuplicateSequenceNumber(0);
-		connectRequestPacket.setDuplicateSequenceNumber(52);
-		forceDisconnectPacket.setDuplicateSequenceNumber(0);
-		pingPacket.setDuplicateSequenceNumber(0);
-		pingResponsePacket.setDuplicateSequenceNumber(3000);
+		applicationPacketHelloWorld = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				0, 81,				//Sequence Number: 81
+				-1, -1,				//Duplicate Of:    65535
+				0, 27,				//Last Received:   27
+				2, 16, -121, 124,	//Packet History:  34637692
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-128,				//Message Type:    APPLICATION
+									//Message:         "Hello world!"
+				72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 33
+		});
+		clientDisconnectPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				1,					//Connection Id:   1
+				37, 85,				//Sequence Number: 9557
+				-1, -2,				//Duplicate Of:    65534
+				0, 8,				//Last Received:   8
+				4, -103, 2, -103,	//Packet History:  77136537
+				-128,				//Packet Flags:    IMMEDIATE
+				-121				//Message Type:    CLIENT_DISCONNECT
+									//Message:         null
+		});
+		connectionAcceptedPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				82, 				//Connection Id:   82
+				10, -52,			//Sequence Number: 2764
+				0, 1,				//Duplicate Of:    1
+				15, -96,			//Last Received:   4000
+				2, 110, 91, -128,	//Packet History:  40786816
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-124				//Message Type:    CONNECTION_ACCEPTED
+									//Message:         null
+		});
+		connectionRefusedPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				-1, -2,				//Sequence Number: 65534
+				0, 0,				//Duplicate Of:    N/A
+				0, 0,				//Last Received:   N/A
+				6, -41, 36, 42,		//Packet History:  114762794
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-123				//Message Type:    CONNECTION_REFUSED
+									//Message:         null
+		});
+		connectRequestPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				-1, -1,				//Sequence Number: 65535
+				0, 52,				//Duplicate Of:    52
+				-1, -2,				//Last Received:   65534
+				10, -67, -13, -78,	//Packet History:  180220850
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-125				//Message Type:    CONNECT_REQUEST
+									//Message:         null
+		});
+		forceDisconnectPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-56,				//Connection Id:   200
+				0, 0,				//Sequence Number: N/A
+				0, 0,				//Duplicate Of:    N/A
+				-1, -1,				//Last Received:   65535
+				3, -85, 85, 119,	//Packet History:  61560183
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-122				//Message Type:    FORCE_DISCONNECT
+									//Message:         null
+		});
+		pingPacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-2,					//Connection Id:   254
+				0, 1,				//Sequence Number: 1
+				0, 0,				//Duplicate Of:    N/A
+				0, 1,				//Last Received:   1
+				10, 54, 121, 31,	//Packet History:  171342111
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-127				//Message Type:    PING
+									//Message:         null
+		});
+		pingResponsePacket = Packet.parsePacket(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-1,					//Connection Id:   255
+				0, 4,				//Sequence Number: 4
+				11, -72,			//Duplicate Of:    3000
+				0, 0,				//Last Received:   N/A
+				0, 125, 74, 30,		//Packet History:  8210974
+				-128,				//Packet Flags:    IMMEDIATE
+				-126				//Message Type:    PING_RESPONSE
+									//Message:         null
+		});
 	}
 
 	@After
@@ -110,7 +176,7 @@ public class PacketTest extends TestCase {
 	@Test
 	public void testGetConnectionId() {
 		assertEquals(0, allZeroesPacket.getConnectionId());
-		assertEquals(137, protocolValidPacket.getConnectionId());
+		assertEquals(139, protocolValidPacket.getConnectionId());
 		assertEquals(24, protocolInvalidPacket.getConnectionId());
 		assertEquals(0, applicationPacketHelloWorld.getConnectionId());
 		assertEquals(1, clientDisconnectPacket.getConnectionId());
@@ -192,7 +258,7 @@ public class PacketTest extends TestCase {
 	public void testGetSequenceNumber() {
 		assertEquals(0, allZeroesPacket.getSequenceNumber());
 		assertEquals(11089, protocolValidPacket.getSequenceNumber());
-		assertEquals(37400, protocolInvalidPacket.getSequenceNumber());
+		assertEquals(37402, protocolInvalidPacket.getSequenceNumber());
 		assertEquals(81, applicationPacketHelloWorld.getSequenceNumber());
 		assertEquals(9557, clientDisconnectPacket.getSequenceNumber());
 		assertEquals(2764, connectionAcceptedPacket.getSequenceNumber());
@@ -270,7 +336,7 @@ public class PacketTest extends TestCase {
 	public void testGetDuplicateSequenceNumber() {
 		assertEquals(0, allZeroesPacket.getDuplicateSequenceNumber());
 		assertEquals(20, protocolValidPacket.getDuplicateSequenceNumber());
-		assertEquals(52886, protocolInvalidPacket.getDuplicateSequenceNumber());
+		assertEquals(52888, protocolInvalidPacket.getDuplicateSequenceNumber());
 		assertEquals(65535, applicationPacketHelloWorld.getDuplicateSequenceNumber());
 		assertEquals(65534, clientDisconnectPacket.getDuplicateSequenceNumber());
 		assertEquals(1, connectionAcceptedPacket.getDuplicateSequenceNumber());
@@ -283,77 +349,597 @@ public class PacketTest extends TestCase {
 
 	@Test
 	public void testSetDuplicateSequenceNumber() {
-		fail("Not yet implemented");
+		allZeroesPacket.setDuplicateSequenceNumber(2000);
+		protocolValidPacket.setDuplicateSequenceNumber(52);
+		protocolInvalidPacket.setDuplicateSequenceNumber(908);
+		applicationPacketHelloWorld.setDuplicateSequenceNumber(14);
+		clientDisconnectPacket.setDuplicateSequenceNumber(0);
+		connectionAcceptedPacket.setDuplicateSequenceNumber(1);
+		connectionRefusedPacket.setDuplicateSequenceNumber(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE);
+		connectRequestPacket.setDuplicateSequenceNumber(65534);
+		forceDisconnectPacket.setDuplicateSequenceNumber(Packet.MINIMUM_CONNECTION_ID);
+		pingPacket.setDuplicateSequenceNumber(65535);
+		pingResponsePacket.setDuplicateSequenceNumber(Packet.MAXIMUM_SEQUENCE_NUMBER);
+
+		assertEquals(2000, allZeroesPacket.getDuplicateSequenceNumber());
+		assertEquals(52, protocolValidPacket.getDuplicateSequenceNumber());
+		assertEquals(908, protocolInvalidPacket.getDuplicateSequenceNumber());
+		assertEquals(14, applicationPacketHelloWorld.getDuplicateSequenceNumber());
+		assertEquals(0, clientDisconnectPacket.getDuplicateSequenceNumber());
+		assertEquals(1, connectionAcceptedPacket.getDuplicateSequenceNumber());
+		assertEquals(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE, connectionRefusedPacket.getDuplicateSequenceNumber());
+		assertEquals(65534, connectRequestPacket.getDuplicateSequenceNumber());
+		assertEquals(Packet.MINIMUM_CONNECTION_ID, forceDisconnectPacket.getDuplicateSequenceNumber());
+		assertEquals(65535, pingPacket.getDuplicateSequenceNumber());
+		assertEquals(Packet.MAXIMUM_SEQUENCE_NUMBER, pingResponsePacket.getDuplicateSequenceNumber());
+
+		connectRequestPacket.setDuplicateSequenceNumber(32);
+		assertEquals(32, connectRequestPacket.getDuplicateSequenceNumber());
+
+		connectRequestPacket.setDuplicateSequenceNumber(32);
+		assertEquals(32, connectRequestPacket.getDuplicateSequenceNumber());
+
+		connectRequestPacket.setDuplicateSequenceNumber(0);
+		assertEquals(0, connectRequestPacket.getDuplicateSequenceNumber());
+
+		connectRequestPacket.setDuplicateSequenceNumber(5000);
+		assertEquals(5000, connectRequestPacket.getDuplicateSequenceNumber());
 	}
 
 	@Test
 	public void testIsDuplicate() {
-		fail("Not yet implemented");
+		assertFalse(allZeroesPacket.isDuplicate());
+		assertTrue(protocolValidPacket.isDuplicate());
+		assertTrue(protocolInvalidPacket.isDuplicate());
+		assertTrue(applicationPacketHelloWorld.isDuplicate());
+		assertTrue(clientDisconnectPacket.isDuplicate());
+		assertTrue(connectionAcceptedPacket.isDuplicate());
+		assertFalse(connectionRefusedPacket.isDuplicate());
+		assertTrue(connectRequestPacket.isDuplicate());
+		assertFalse(forceDisconnectPacket.isDuplicate());
+		assertFalse(pingPacket.isDuplicate());
+		assertTrue(pingResponsePacket.isDuplicate());
+
+		pingPacket.setDuplicateSequenceNumber(10);
+		assertTrue(pingPacket.isDuplicate());
+
+		pingPacket.setDuplicateSequenceNumber(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE);
+		assertFalse(pingPacket.isDuplicate());
+
+		pingPacket.setDuplicateSequenceNumber(5);
+		assertTrue(pingPacket.isDuplicate());
 	}
 
 	@Test
 	public void testGetLastReceivedSequenceNumber() {
-		fail("Not yet implemented");
+		assertEquals(0, allZeroesPacket.getLastReceivedSequenceNumber());
+		assertEquals(35191, protocolValidPacket.getLastReceivedSequenceNumber());
+		assertEquals(6865, protocolInvalidPacket.getLastReceivedSequenceNumber());
+		assertEquals(27, applicationPacketHelloWorld.getLastReceivedSequenceNumber());
+		assertEquals(8, clientDisconnectPacket.getLastReceivedSequenceNumber());
+		assertEquals(4000, connectionAcceptedPacket.getLastReceivedSequenceNumber());
+		assertEquals(0, connectionRefusedPacket.getLastReceivedSequenceNumber());
+		assertEquals(65534, connectRequestPacket.getLastReceivedSequenceNumber());
+		assertEquals(65535, forceDisconnectPacket.getLastReceivedSequenceNumber());
+		assertEquals(1, pingPacket.getLastReceivedSequenceNumber());
+		assertEquals(0, pingResponsePacket.getLastReceivedSequenceNumber());
 	}
 
 	@Test
 	public void testSetLastReceivedSequenceNumber() {
-		fail("Not yet implemented");
+		allZeroesPacket.setLastReceivedSequenceNumber(62);
+		protocolValidPacket.setLastReceivedSequenceNumber(1);
+		protocolInvalidPacket.setLastReceivedSequenceNumber(0);
+		applicationPacketHelloWorld.setLastReceivedSequenceNumber(65535);
+		clientDisconnectPacket.setLastReceivedSequenceNumber(65534);
+		connectionAcceptedPacket.setLastReceivedSequenceNumber(86);
+		connectionRefusedPacket.setLastReceivedSequenceNumber(40000);
+		connectRequestPacket.setLastReceivedSequenceNumber(Packet.MINIMUM_SEQUENCE_NUMBER);
+		forceDisconnectPacket.setLastReceivedSequenceNumber(Packet.MAXIMUM_SEQUENCE_NUMBER);
+		pingPacket.setLastReceivedSequenceNumber(87);
+		pingResponsePacket.setLastReceivedSequenceNumber(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE);
+
+		assertEquals(62, allZeroesPacket.getLastReceivedSequenceNumber());
+		assertEquals(1, protocolValidPacket.getLastReceivedSequenceNumber());
+		assertEquals(0, protocolInvalidPacket.getLastReceivedSequenceNumber());
+		assertEquals(65535, applicationPacketHelloWorld.getLastReceivedSequenceNumber());
+		assertEquals(65534, clientDisconnectPacket.getLastReceivedSequenceNumber());
+		assertEquals(86, connectionAcceptedPacket.getLastReceivedSequenceNumber());
+		assertEquals(40000, connectionRefusedPacket.getLastReceivedSequenceNumber());
+		assertEquals(Packet.MINIMUM_SEQUENCE_NUMBER, connectRequestPacket.getLastReceivedSequenceNumber());
+		assertEquals(Packet.MAXIMUM_SEQUENCE_NUMBER, forceDisconnectPacket.getLastReceivedSequenceNumber());
+		assertEquals(87, pingPacket.getLastReceivedSequenceNumber());
+		assertEquals(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE, pingResponsePacket.getLastReceivedSequenceNumber());
+
+		pingPacket.setLastReceivedSequenceNumber(1000);
+		assertEquals(1000, pingPacket.getLastReceivedSequenceNumber());
+
+		pingPacket.setLastReceivedSequenceNumber(1000);
+		assertEquals(1000, pingPacket.getLastReceivedSequenceNumber());
+
+		pingPacket.setLastReceivedSequenceNumber(0);
+		assertEquals(0, pingPacket.getLastReceivedSequenceNumber());
+
+		pingPacket.setLastReceivedSequenceNumber(25);
+		assertEquals(25, pingPacket.getLastReceivedSequenceNumber());
 	}
 
 	@Test
 	public void testHasReceivedPacketHistory() {
-		fail("Not yet implemented");
+		assertFalse(allZeroesPacket.hasReceivedPacketHistory());
+		assertTrue(protocolValidPacket.hasReceivedPacketHistory());
+		assertTrue(protocolInvalidPacket.hasReceivedPacketHistory());
+		assertTrue(applicationPacketHelloWorld.hasReceivedPacketHistory());
+		assertTrue(clientDisconnectPacket.hasReceivedPacketHistory());
+		assertTrue(connectionAcceptedPacket.hasReceivedPacketHistory());
+		assertFalse(connectionRefusedPacket.hasReceivedPacketHistory());
+		assertTrue(connectRequestPacket.hasReceivedPacketHistory());
+		assertTrue(forceDisconnectPacket.hasReceivedPacketHistory());
+		assertTrue(pingPacket.hasReceivedPacketHistory());
+		assertFalse(pingResponsePacket.hasReceivedPacketHistory());
+
+		pingResponsePacket.setLastReceivedSequenceNumber(Packet.SEQUENCE_NUMBER_NOT_APPLICABLE);
+		assertFalse(pingResponsePacket.hasReceivedPacketHistory());
+
+		pingResponsePacket.setLastReceivedSequenceNumber(3);
+		assertTrue(pingResponsePacket.hasReceivedPacketHistory());
 	}
 
 	@Test
 	public void testGetReceivedPacketHistory() {
-		fail("Not yet implemented");
+		assertEquals(0, allZeroesPacket.getReceivedPacketHistory());
+		assertEquals(716308725, protocolValidPacket.getReceivedPacketHistory());
+		assertEquals(202337454, protocolInvalidPacket.getReceivedPacketHistory());
+		assertEquals(34637692, applicationPacketHelloWorld.getReceivedPacketHistory());
+		assertEquals(77136537, clientDisconnectPacket.getReceivedPacketHistory());
+		assertEquals(40786816, connectionAcceptedPacket.getReceivedPacketHistory());
+		assertEquals(114762794, connectionRefusedPacket.getReceivedPacketHistory());
+		assertEquals(180220850, connectRequestPacket.getReceivedPacketHistory());
+		assertEquals(61560183, forceDisconnectPacket.getReceivedPacketHistory());
+		assertEquals(171342111, pingPacket.getReceivedPacketHistory());
+		assertEquals(8210974, pingResponsePacket.getReceivedPacketHistory());
 	}
 
 	@Test
 	public void testSetReceivedPacketHistory() {
-		fail("Not yet implemented");
+		allZeroesPacket.setReceivedPacketHistory(2147483647);
+		protocolValidPacket.setReceivedPacketHistory(-2147483648);
+		protocolInvalidPacket.setReceivedPacketHistory(0);
+		applicationPacketHelloWorld.setReceivedPacketHistory(82266084);
+		clientDisconnectPacket.setReceivedPacketHistory(79112450);
+		connectionAcceptedPacket.setReceivedPacketHistory(-137004667);
+		connectionRefusedPacket.setReceivedPacketHistory(156227865);
+		connectRequestPacket.setReceivedPacketHistory(185700919);
+		forceDisconnectPacket.setReceivedPacketHistory(-14970660);
+		pingPacket.setReceivedPacketHistory(134470887);
+		pingResponsePacket.setReceivedPacketHistory(54348759);
+
+		assertEquals(2147483647, allZeroesPacket.getReceivedPacketHistory());
+		assertEquals(-2147483648, protocolValidPacket.getReceivedPacketHistory());
+		assertEquals(0, protocolInvalidPacket.getReceivedPacketHistory());
+		assertEquals(82266084, applicationPacketHelloWorld.getReceivedPacketHistory());
+		assertEquals(79112450, clientDisconnectPacket.getReceivedPacketHistory());
+		assertEquals(-137004667, connectionAcceptedPacket.getReceivedPacketHistory());
+		assertEquals(156227865, connectionRefusedPacket.getReceivedPacketHistory());
+		assertEquals(185700919, connectRequestPacket.getReceivedPacketHistory());
+		assertEquals(-14970660, forceDisconnectPacket.getReceivedPacketHistory());
+		assertEquals(134470887, pingPacket.getReceivedPacketHistory());
+		assertEquals(54348759, pingResponsePacket.getReceivedPacketHistory());
+
+		connectRequestPacket.setReceivedPacketHistory(0);
+		assertEquals(0, connectRequestPacket.getReceivedPacketHistory());
+
+		connectRequestPacket.setReceivedPacketHistory(5);
+		assertEquals(5, connectRequestPacket.getReceivedPacketHistory());
+
+		connectRequestPacket.setReceivedPacketHistory(5);
+		assertEquals(5, connectRequestPacket.getReceivedPacketHistory());
 	}
 
 	@Test
 	public void testIsImmediateResponse() {
-		fail("Not yet implemented");
+		assertFalse(allZeroesPacket.isImmediateResponse());
+		assertTrue(protocolValidPacket.isImmediateResponse());
+		assertFalse(protocolInvalidPacket.isImmediateResponse());
+		assertFalse(applicationPacketHelloWorld.isImmediateResponse());
+		assertTrue(clientDisconnectPacket.isImmediateResponse());
+		assertFalse(connectionAcceptedPacket.isImmediateResponse());
+		assertFalse(connectionRefusedPacket.isImmediateResponse());
+		assertFalse(connectRequestPacket.isImmediateResponse());
+		assertFalse(forceDisconnectPacket.isImmediateResponse());
+		assertFalse(pingPacket.isImmediateResponse());
+		assertTrue(pingResponsePacket.isImmediateResponse());
 	}
 
 	@Test
 	public void testSetIsImmediateResponse() {
-		fail("Not yet implemented");
+		allZeroesPacket.setIsImmediateResponse(true);
+		protocolValidPacket.setIsImmediateResponse(false);
+		protocolInvalidPacket.setIsImmediateResponse(true);
+		applicationPacketHelloWorld.setIsImmediateResponse(false);
+		clientDisconnectPacket.setIsImmediateResponse(true);
+		connectionAcceptedPacket.setIsImmediateResponse(false);
+		connectionRefusedPacket.setIsImmediateResponse(true);
+		connectRequestPacket.setIsImmediateResponse(false);
+		forceDisconnectPacket.setIsImmediateResponse(true);
+		pingPacket.setIsImmediateResponse(false);
+		pingResponsePacket.setIsImmediateResponse(true);
+		
+		assertTrue(allZeroesPacket.isImmediateResponse());
+		assertFalse(protocolValidPacket.isImmediateResponse());
+		assertTrue(protocolInvalidPacket.isImmediateResponse());
+		assertFalse(applicationPacketHelloWorld.isImmediateResponse());
+		assertTrue(clientDisconnectPacket.isImmediateResponse());
+		assertFalse(connectionAcceptedPacket.isImmediateResponse());
+		assertTrue(connectionRefusedPacket.isImmediateResponse());
+		assertFalse(connectRequestPacket.isImmediateResponse());
+		assertTrue(forceDisconnectPacket.isImmediateResponse());
+		assertFalse(pingPacket.isImmediateResponse());
+		assertTrue(pingResponsePacket.isImmediateResponse());
+
 	}
 
 	@Test
 	public void testGetMessageType() {
-		fail("Not yet implemented");
+		assertEquals(MessageType.INVALID, allZeroesPacket.getMessageType());
+		assertEquals(MessageType.PING, protocolValidPacket.getMessageType());
+		assertEquals(MessageType.INVALID, protocolInvalidPacket.getMessageType());
+		assertEquals(MessageType.APPLICATION, applicationPacketHelloWorld.getMessageType());
+		assertEquals(MessageType.CLIENT_DISCONNECT, clientDisconnectPacket.getMessageType());
+		assertEquals(MessageType.CONNECTION_ACCEPTED, connectionAcceptedPacket.getMessageType());
+		assertEquals(MessageType.CONNECTION_REFUSED, connectionRefusedPacket.getMessageType());
+		assertEquals(MessageType.CONNECT_REQUEST, connectRequestPacket.getMessageType());
+		assertEquals(MessageType.FORCE_DISCONNECT, forceDisconnectPacket.getMessageType());
+		assertEquals(MessageType.PING, pingPacket.getMessageType());
+		assertEquals(MessageType.PING_RESPONSE, pingResponsePacket.getMessageType());
 	}
 
 	@Test
 	public void testSetMessageType() {
-		fail("Not yet implemented");
+		protocolValidPacket.setMessageType(MessageType.INVALID);
+		assertEquals(MessageType.INVALID, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.PING);
+		assertEquals(MessageType.PING, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.APPLICATION);
+		assertEquals(MessageType.APPLICATION, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.CLIENT_DISCONNECT);
+		assertEquals(MessageType.CLIENT_DISCONNECT, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.CONNECTION_REFUSED);
+		assertEquals(MessageType.CONNECTION_REFUSED, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.CONNECT_REQUEST);
+		assertEquals(MessageType.CONNECT_REQUEST, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.FORCE_DISCONNECT);
+		assertEquals(MessageType.FORCE_DISCONNECT, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.PING);
+		assertEquals(MessageType.PING, protocolValidPacket.getMessageType());
+
+		protocolValidPacket.setMessageType(MessageType.PING_RESPONSE);
+		assertEquals(MessageType.PING_RESPONSE, protocolValidPacket.getMessageType());
 	}
 
 	@Test
 	public void testGetMessage() {
-		fail("Not yet implemented");
+		assertNull(allZeroesPacket.getMessage());
+		assertNull(protocolValidPacket.getMessage());
+		assertNull(protocolInvalidPacket.getMessage());
+		assertEquals("Hello world!", applicationPacketHelloWorld.getMessage());
+		assertNull(clientDisconnectPacket.getMessage());
+		assertNull(connectionAcceptedPacket.getMessage());
+		assertNull(connectionRefusedPacket.getMessage());
+		assertNull(connectRequestPacket.getMessage());
+		assertNull(forceDisconnectPacket.getMessage());
+		assertNull(pingPacket.getMessage());
+		assertNull(pingResponsePacket.getMessage());
+
+		assertNull(Packet.createApplicationPacket(0, "").getMessage());
+		assertEquals("bar", Packet.createApplicationPacket(0, "bar").getMessage());
+		assertEquals("~!@#$%^&*()_+`1234567890-=[]\\{}|;':\",/<>?", Packet.createApplicationPacket(0, "~!@#$%^&*()_+`1234567890-=[]\\{}|;':\",/<>?").getMessage());
 	}
 
 	@Test
 	public void testSetMessage() {
-		fail("Not yet implemented");
+		allZeroesPacket.setMessage("");
+		protocolValidPacket.setMessage("1");
+		protocolInvalidPacket.setMessage(null);
+		applicationPacketHelloWorld.setMessage("abcdef");
+		clientDisconnectPacket.setMessage("123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "1234567890");
+		connectionAcceptedPacket.setMessage("~!@#$%^&*()_+`1234567890-={}|\\[]:\";',./<>?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+		connectionRefusedPacket.setMessage("a");
+
+		assertNull(allZeroesPacket.getMessage());
+		assertEquals("1", protocolValidPacket.getMessage());
+		assertNull(protocolInvalidPacket.getMessage());
+		assertEquals("abcdef", applicationPacketHelloWorld.getMessage());
+		assertEquals("123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 "
+				+ "1234567890", clientDisconnectPacket.getMessage());
+		assertEquals("~!@#$%^&*()_+`1234567890-={}|\\[]:\";',./<>?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", connectionAcceptedPacket.getMessage());
+		assertEquals("a", connectionRefusedPacket.getMessage());
+
+		connectionRefusedPacket.setMessage("b");
+		assertEquals("b", connectionRefusedPacket.getMessage());
+
+		connectionRefusedPacket.setMessage("b");
+		assertEquals("b", connectionRefusedPacket.getMessage());
+
+		connectionRefusedPacket.setMessage(null);
+		assertNull(connectionRefusedPacket.getMessage());
+
+		connectionRefusedPacket.setMessage("c");
+		assertEquals("c", connectionRefusedPacket.getMessage());
 	}
 
 	@Test
 	public void testToByteArray() {
-		fail("Not yet implemented");
-	}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+					0, 0, 0, 0,			//Protocol Id:     0 -- INVALID
+					0,					//Connection Id:   ANONYMOUS
+					0, 0,				//Sequence Number: N/A
+					0, 0,				//Duplicate Of:    N/A
+					0, 0,				//Last Received:   N/A
+					0, 0, 0, 0,			//Packet History:  0
+					0,					//Packet Flags:    NOT IMMEDIATE
+					0					//Message Type:    INVALID
+										//Message:         null
+			}, allZeroesPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-117,				//Connection Id:   139
+				43, 81,				//Sequence Number: 11089
+				0, 20,				//Duplicate Of:    20
+				-119, 119,			//Last Received:   35191
+				42, -78, 0, -11,	//Packet History:  716308725
+				-128,				//Packet Flags:    IMMEDIATE
+				-127				//Message Type:    PING
+									//Message:         null
+			}, protocolValidPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				-50, 2, 5, 81,		//Protocol Id:     -838728367 -- INVALID
+				24,					//Connection Id:   24
+				-110, 26,			//Sequence Number: 37402
+				-50, -104,			//Duplicate Of:    52888
+				26, -47,			//Last Received:   6865
+				12, 15, 108, -82,	//Packet History:  202337454
+				0,					//Packet Flags:    NOT IMMEDIATE
+				0					//Message Type:    INVALID
+									//Message:         null
+			}, protocolInvalidPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				0, 81,				//Sequence Number: 81
+				-1, -1,				//Duplicate Of:    65535
+				0, 27,				//Last Received:   27
+				2, 16, -121, 124,	//Packet History:  34637692
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-128,				//Message Type:    APPLICATION
+									//Message:         "Hello world!"
+				72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 33
+			}, applicationPacketHelloWorld.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				1,					//Connection Id:   1
+				37, 85,				//Sequence Number: 9557
+				-1, -2,				//Duplicate Of:    65534
+				0, 8,				//Last Received:   8
+				4, -103, 2, -103,	//Packet History:  77136537
+				-128,				//Packet Flags:    IMMEDIATE
+				-121				//Message Type:    CLIENT_DISCONNECT
+									//Message:         null
+			}, clientDisconnectPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				82, 				//Connection Id:   82
+				10, -52,			//Sequence Number: 2764
+				0, 1,				//Duplicate Of:    1
+				15, -96,			//Last Received:   4000
+				2, 110, 91, -128,	//Packet History:  40786816
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-124				//Message Type:    CONNECTION_ACCEPTED
+									//Message:         null
+			}, connectionAcceptedPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				-1, -2,				//Sequence Number: 65534
+				0, 0,				//Duplicate Of:    N/A
+				0, 0,				//Last Received:   N/A
+				6, -41, 36, 42,		//Packet History:  114762794
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-123				//Message Type:    CONNECTION_REFUSED
+									//Message:         null
+			}, connectionRefusedPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				0,					//Connection Id:   ANONYMOUS
+				-1, -1,				//Sequence Number: 65535
+				0, 52,				//Duplicate Of:    52
+				-1, -2,				//Last Received:   65534
+				10, -67, -13, -78,	//Packet History:  180220850
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-125				//Message Type:    CONNECT_REQUEST
+									//Message:         null
+			}, connectRequestPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-56,				//Connection Id:   200
+				0, 0,				//Sequence Number: N/A
+				0, 0,				//Duplicate Of:    N/A
+				-1, -1,				//Last Received:   65535
+				3, -85, 85, 119,	//Packet History:  61560183
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-122				//Message Type:    FORCE_DISCONNECT
+									//Message:         null
+			}, forceDisconnectPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-2,					//Connection Id:   254
+				0, 1,				//Sequence Number: 1
+				0, 0,				//Duplicate Of:    N/A
+				0, 1,				//Last Received:   1
+				10, 54, 121, 31,	//Packet History:  171342111
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-127				//Message Type:    PING
+									//Message:         null
+			}, pingPacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				-1,					//Connection Id:   255
+				0, 4,				//Sequence Number: 4
+				11, -72,			//Duplicate Of:    3000
+				0, 0,				//Last Received:   N/A
+				0, 125, 74, 30,		//Packet History:  8210974
+				-128,				//Packet Flags:    IMMEDIATE
+				-126				//Message Type:    PING_RESPONSE
+									//Message:         null
+			}, pingResponsePacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
 
-	@Test
-	public void testToString() {
-		fail("Not yet implemented");
+		pingResponsePacket.setConnectionId(4);
+		pingResponsePacket.setSequenceNumber(18);
+		pingResponsePacket.setDuplicateSequenceNumber(42);
+		pingResponsePacket.setLastReceivedSequenceNumber(6);
+		pingResponsePacket.setReceivedPacketHistory(-2);
+		pingResponsePacket.setIsImmediateResponse(false);
+		pingResponsePacket.setMessageType(MessageType.CLIENT_DISCONNECT);
+		pingResponsePacket.setMessage("bar");
+		try {
+			Assert.assertArrayEquals(new byte[] {
+				6, 45, -9, 59,		//Protocol Id:     103675707
+				4,					//Connection Id:   4
+				0, 18,				//Sequence Number: 4
+				0, 42,				//Duplicate Of:    42
+				0, 6,				//Last Received:   6
+				-1, -1, -1, -2,		//Packet History:  -2
+				0,					//Packet Flags:    NOT IMMEDIATE
+				-121,				//Message Type:    CLIENT_DISCONNECT
+				98, 97, 114			//Message:         "bar"
+			}, pingResponsePacket.toByteArray());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			forceDisconnectPacket.setConnectionId(Packet.MINIMUM_CONNECTION_ID - 2);
+			forceDisconnectPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			forceDisconnectPacket.setConnectionId(Packet.MAXIMUM_CONNECTION_ID + 1);
+			forceDisconnectPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			applicationPacketHelloWorld.setSequenceNumber(Packet.MINIMUM_SEQUENCE_NUMBER - 2);
+			applicationPacketHelloWorld.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			applicationPacketHelloWorld.setSequenceNumber(Packet.MAXIMUM_SEQUENCE_NUMBER + 1);
+			applicationPacketHelloWorld.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			connectionRefusedPacket.setDuplicateSequenceNumber(Packet.MINIMUM_SEQUENCE_NUMBER - 2);
+			connectionRefusedPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			connectionRefusedPacket.setDuplicateSequenceNumber(Packet.MAXIMUM_SEQUENCE_NUMBER + 1);
+			connectionRefusedPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			connectionAcceptedPacket.setLastReceivedSequenceNumber(Packet.MINIMUM_SEQUENCE_NUMBER - 2);
+			connectionAcceptedPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
+
+		try {
+			connectionAcceptedPacket.setLastReceivedSequenceNumber(Packet.MAXIMUM_SEQUENCE_NUMBER + 1);
+			connectionAcceptedPacket.toByteArray();
+			fail("Expected PacketEncodingException");
+		}  catch (PacketEncodingException e) {
+			//expected
+		}
 	}
 
 	@Test
@@ -416,12 +1002,127 @@ public class PacketTest extends TestCase {
 
 	@Test
 	public void testParsePacketByteArray() {
-		fail("Not yet implemented");
+		try {
+			assertPacketsEqual(allZeroesPacket, Packet.parsePacket(allZeroesPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(protocolValidPacket, Packet.parsePacket(protocolValidPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(protocolInvalidPacket, Packet.parsePacket(protocolInvalidPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(applicationPacketHelloWorld, Packet.parsePacket(applicationPacketHelloWorld.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(clientDisconnectPacket, Packet.parsePacket(clientDisconnectPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(connectionAcceptedPacket, Packet.parsePacket(connectionAcceptedPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(connectionRefusedPacket, Packet.parsePacket(connectionRefusedPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(connectRequestPacket, Packet.parsePacket(connectRequestPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(forceDisconnectPacket, Packet.parsePacket(forceDisconnectPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(pingPacket, Packet.parsePacket(pingPacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			assertPacketsEqual(pingResponsePacket, Packet.parsePacket(pingResponsePacket.toByteArray()));
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
 	}
 
 	@Test
 	public void testParsePacketByteArrayInt() {
-		fail("Not yet implemented");
+		try {
+			Packet packet = Packet.parsePacket(applicationPacketHelloWorld.toByteArray(), 17);
+			assertNotNull(packet);
+			assertNull(packet.getMessage());
+			packet = Packet.parsePacket(applicationPacketHelloWorld.toByteArray(), 18);
+			assertNotNull(packet);
+			assertEquals(packet.getMessage(), "H");
+			packet = Packet.parsePacket(applicationPacketHelloWorld.toByteArray(), 20);
+			assertNotNull(packet);
+			assertEquals(packet.getMessage(), "Hel");
+			packet = Packet.parsePacket(applicationPacketHelloWorld.toByteArray(), 100);
+			assertNotNull(packet);
+			assertEquals(packet.getMessage(), "Hello world!");
+		} catch (MalformedPacketException e) {
+			fail(e.getMessage());
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
+
+		try {
+			Packet packet = Packet.parsePacket(applicationPacketHelloWorld.toByteArray(), 3);
+			assertNotNull(packet);
+			assertNull(packet.getMessage());
+			fail("Expected MalformedPacketException");
+		}
+		catch (MalformedPacketException e) {
+			//expected
+		} catch (PacketEncodingException e) {
+			fail(e.getMessage());
+		}
 	}
 
 	@Test
@@ -441,6 +1142,9 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createApplicationPacket(100, "1"));
 		assertNotNull(Packet.createApplicationPacket(254, null));
 		assertNotNull(Packet.createApplicationPacket(255, "<fake-xml>bar</fake-xml>"));
+		assertEquals(100, Packet.createApplicationPacket(100, "Hello world!").getConnectionId());
+		assertEquals(MessageType.APPLICATION, Packet.createApplicationPacket(100, "Hello world!").getMessageType());
+		assertEquals("Hello world!", Packet.createApplicationPacket(100, "Hello world!").getMessage());
 	}
 
 	@Test
@@ -454,6 +1158,8 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createPingPacket(100));
 		assertNotNull(Packet.createPingPacket(254));
 		assertNotNull(Packet.createPingPacket(255));
+		assertEquals(100, Packet.createPingPacket(100).getConnectionId());
+		assertEquals(MessageType.PING, Packet.createPingPacket(100).getMessageType());
 	}
 
 	@Test
@@ -467,12 +1173,16 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createPingResponsePacket(100));
 		assertNotNull(Packet.createPingResponsePacket(254));
 		assertNotNull(Packet.createPingResponsePacket(255));
+		assertEquals(100, Packet.createPingResponsePacket(100).getConnectionId());
+		assertEquals(MessageType.PING_RESPONSE, Packet.createPingResponsePacket(100).getMessageType());
 	}
 
 	@Test
 	public void testCreateConnectRequestPacket() {
 		assertNotNull(connectRequestPacket);
 		assertNotNull(Packet.createConnectRequestPacket());
+		assertEquals(Packet.ANONYMOUS_CONNECTION_ID, Packet.createConnectRequestPacket().getConnectionId());
+		assertEquals(MessageType.CONNECT_REQUEST, Packet.createConnectRequestPacket().getMessageType());
 	}
 
 	@Test
@@ -486,12 +1196,16 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createConnectionAcceptedPacket(100));
 		assertNotNull(Packet.createConnectionAcceptedPacket(254));
 		assertNotNull(Packet.createConnectionAcceptedPacket(255));
+		assertEquals(100, Packet.createConnectionAcceptedPacket(100).getConnectionId());
+		assertEquals(MessageType.CONNECTION_ACCEPTED, Packet.createConnectionAcceptedPacket(100).getMessageType());
 	}
 
 	@Test
 	public void testCreateConnectionRefusedPacket() {
 		assertNotNull(connectionRefusedPacket);
 		assertNotNull(Packet.createConnectionRefusedPacket());
+		assertEquals(Packet.ANONYMOUS_CONNECTION_ID, Packet.createConnectionRefusedPacket().getConnectionId());
+		assertEquals(MessageType.CONNECTION_REFUSED, Packet.createConnectionRefusedPacket().getMessageType());
 	}
 
 	@Test
@@ -505,6 +1219,8 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createForceDisconnectPacket(100));
 		assertNotNull(Packet.createForceDisconnectPacket(254));
 		assertNotNull(Packet.createForceDisconnectPacket(255));
+		assertEquals(100, Packet.createForceDisconnectPacket(100).getConnectionId());
+		assertEquals(MessageType.FORCE_DISCONNECT, Packet.createForceDisconnectPacket(100).getMessageType());
 	}
 
 	@Test
@@ -518,5 +1234,30 @@ public class PacketTest extends TestCase {
 		assertNotNull(Packet.createClientDisconnectPacket(100));
 		assertNotNull(Packet.createClientDisconnectPacket(254));
 		assertNotNull(Packet.createClientDisconnectPacket(255));
+		assertEquals(100, Packet.createClientDisconnectPacket(100).getConnectionId());
+		assertEquals(MessageType.CLIENT_DISCONNECT, Packet.createClientDisconnectPacket(100).getMessageType());
+	}
+
+	private void assertPacketsEqual(Packet packet1, Packet packet2) {
+		if(packet1 == null)
+			assertNull(packet2);
+		else {
+			assertNotNull(packet2);
+			assertEquals(packet1.isValidProtocol(), packet2.isValidProtocol());
+			assertEquals(packet1.getConnectionId(), packet2.getConnectionId());
+			assertEquals(packet1.getSequenceNumber(), packet2.getSequenceNumber());
+			assertEquals(packet1.getDuplicateSequenceNumber(), packet2.getDuplicateSequenceNumber());
+			assertEquals(packet1.getLastReceivedSequenceNumber(), packet2.getLastReceivedSequenceNumber());
+			assertEquals(packet1.getReceivedPacketHistory(), packet2.getReceivedPacketHistory());
+			assertEquals(packet1.isImmediateResponse(), packet2.isImmediateResponse());
+			assertEquals(packet1.getMessageType(), packet2.getMessageType());
+			if(packet1.getMessage() == null)
+				assertNull(packet2.getMessage());
+			else {
+				assertNotNull(packet2.getMessage());
+				assertEquals(packet1.getMessage(), packet2.getMessage());
+			}
+			
+		}
 	}
 }
