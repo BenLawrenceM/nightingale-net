@@ -95,6 +95,7 @@ public class PacketRecorder {
 	}
 
 	public synchronized void recordAndAddSequenceNumberToOutgoingPacket(Packet packet) {
+		//ignore null packets
 		if(packet == null)
 			return;
 
@@ -102,7 +103,32 @@ public class PacketRecorder {
 		lastSentPacketSequenceNumber = Packet.nextSequenceNumber(lastSentPacketSequenceNumber);
 		packet.setSequenceNumber(lastSentPacketSequenceNumber);
 
-		//TODO implement
+		//add packet to array of sent packets
+		lastSentPacketIndex++;
+		if(lastSentPacketIndex == PacketRecorder.NUM_SENT_PACKETS_STORED)
+			lastSentPacketIndex = 0;
+		sentPackets[lastSentPacketIndex] = packet;
+	}
+
+	public synchronized Packet getSentPacketWithSequenceNumber(int sequenceNumber) {
+		//ignore N/A sequence numbers
+		if(sequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
+			return null;
+
+		//if the sequence number is for a packet in the future then we haven't sent it yet
+		int delta = Packet.deltaBetweenSequenceNumbers(sequenceNumber, lastSentPacketSequenceNumber);
+		if(delta > 0)
+			return null;
+
+		//if the sequence number is too far in the past then we won't have a record of it
+		if(delta <= -PacketRecorder.NUM_SENT_PACKETS_STORED)
+			return null;
+
+		//return the sent packet
+		int index = lastSentPacketSequenceNumber + delta;
+		if(index < 0)
+			index += PacketRecorder.NUM_SENT_PACKETS_STORED;
+		return sentPackets[index];
 	}
 
 	private synchronized void reset() {
