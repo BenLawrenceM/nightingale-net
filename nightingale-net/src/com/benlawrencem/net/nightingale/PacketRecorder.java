@@ -7,9 +7,14 @@ public class PacketRecorder {
 	private int lastReceivedPacketIndex;
 	private int lastReceivedPacketSequenceNumber;
 
+	private static final int NUM_SENT_PACKETS_STORED = 64;
+	private Packet[] sentPackets;
+	private int lastSentPacketIndex;
 	private int lastSentPacketSequenceNumber;
 
 	public PacketRecorder() {
+		receivedPackets = new Packet[PacketRecorder.NUM_RECEIVED_PACKETS_STORED];
+		sentPackets = new Packet[PacketRecorder.NUM_SENT_PACKETS_STORED];
 		reset();
 	}
 
@@ -82,13 +87,6 @@ public class PacketRecorder {
 		}
 	}
 
-	public synchronized void addSequenceNumberToOutgoingPacket(Packet packet) {
-		if(packet != null) {
-			lastSentPacketSequenceNumber = Packet.nextSequenceNumber(lastSentPacketSequenceNumber);
-			packet.setSequenceNumber(lastSentPacketSequenceNumber);
-		}
-	}
-
 	public synchronized void addReceivedPacketHistoryToOutgoingPacket(Packet packet) {
 		if(packet != null) {
 			packet.setLastReceivedSequenceNumber(lastReceivedPacketSequenceNumber);
@@ -96,18 +94,27 @@ public class PacketRecorder {
 		}
 	}
 
-	public synchronized void recordOutgoingPacket(Packet packet) {
+	public synchronized void recordAndAddSequenceNumberToOutgoingPacket(Packet packet) {
+		if(packet == null)
+			return;
+
+		//add sequence number to packet
+		lastSentPacketSequenceNumber = Packet.nextSequenceNumber(lastSentPacketSequenceNumber);
+		packet.setSequenceNumber(lastSentPacketSequenceNumber);
+
 		//TODO implement
 	}
 
 	private synchronized void reset() {
-		receivedPackets = new Packet[PacketRecorder.NUM_RECEIVED_PACKETS_STORED];
 		for(int i = 0; i < receivedPackets.length; i++)
 			receivedPackets[i] = null;
 		receivedPacketHistoryInt = 0;
 		lastReceivedPacketIndex = -1;
 		lastReceivedPacketSequenceNumber = Packet.SEQUENCE_NUMBER_NOT_APPLICABLE;
 
+		for(int i = 0; i < sentPackets.length; i++)
+			sentPackets[i] = null;
+		lastSentPacketIndex = -1;
 		lastSentPacketSequenceNumber = Packet.SEQUENCE_NUMBER_NOT_APPLICABLE;
 	}
 
