@@ -396,7 +396,7 @@ public class Packet {
 		return new Packet(connectionId, MessageType.CLIENT_DISCONNECT, null);
 	}
 
-	public static class MalformedPacketException extends Exception {
+	public static abstract class MalformedPacketException extends Exception {
 		private static final long serialVersionUID = 2230088823308942874L;
 
 		public MalformedPacketException(String message) {
@@ -420,7 +420,7 @@ public class Packet {
 		}
 	}
 
-	public static class PacketEncodingException extends Exception {
+	public static abstract class PacketEncodingException extends Exception {
 		private static final long serialVersionUID = -8101834090041580202L;
 
 		public PacketEncodingException(String message) {

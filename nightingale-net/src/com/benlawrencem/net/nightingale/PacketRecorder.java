@@ -110,6 +110,11 @@ public class PacketRecorder {
 		sentPackets[lastSentPacketIndex] = packet;
 	}
 
+	public synchronized void recordPreviousOutgoingPacketNotSent() {
+		//TODO implement
+	}
+
+
 	public synchronized Packet getSentPacketWithSequenceNumber(int sequenceNumber) {
 		//ignore N/A sequence numbers
 		if(sequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
@@ -131,7 +136,7 @@ public class PacketRecorder {
 		return sentPackets[index];
 	}
 
-	private synchronized void reset() {
+	public synchronized void reset() {
 		for(int i = 0; i < receivedPackets.length; i++)
 			receivedPackets[i] = null;
 		receivedPacketHistoryInt = 0;

@@ -2,6 +2,7 @@ package com.benlawrencem.net.nightingale;
 
 public interface ClientConnectionListener {
 	void onConnected();
+	void onCouldNotConnect();
 	void onDisconnected();
 	void onReceive(String message);
 
