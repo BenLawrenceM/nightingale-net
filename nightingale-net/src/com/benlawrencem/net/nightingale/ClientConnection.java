@@ -118,7 +118,7 @@ public class ClientConnection implements PacketReceiver {
 
 	public void receivePacket(Packet packet, String address, int port) {
 		if(logger.isLoggable(Level.FINEST))
-			logger.finest("Incoming packet:" + (packet == null ? " null" : packet.toString().replaceAll("\n", "  \n")));
+			logger.finest("Incoming packet:" + (packet == null ? " null" : "  " + packet.toString().replaceAll("\n", "\n  ")));
 
 		//ignore null packets
 		if(packet == null) {
@@ -362,7 +362,7 @@ public class ClientConnection implements PacketReceiver {
 					DatagramPacket datagramPacket = new DatagramPacket(bytes, bytes.length, serverInetAddress, serverPort);
 					socket.send(datagramPacket);
 					if(logger.isLoggable(Level.FINEST))
-						logger.finest("Outgoing packet:\n" + packet.toString().replaceAll("\n", "  \n"));
+						logger.finest("Outgoing packet:\n  " + packet.toString().replaceAll("\n", "\n  "));
 				} catch (PacketEncodingException e) {
 					//encoding issues result when the packet contains connection id or sequence numbers that are out of range.
 					// we would not expect these to occur if everything is functioning as normal
