@@ -28,7 +28,7 @@ public class Server implements PacketReceiver {
 		return -1;
 	}
 
-	public void receive(Packet packet, String address, int port) {
+	public void receivePacket(Packet packet, String address, int port) {
 		//TODO implement
 	}
 

@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
@@ -64,6 +65,7 @@ public class ClientConnection implements PacketReceiver {
 				receivePacketThread.start();
 				timeoutThread = new TimeoutThread(this, ClientConnection.CONNECT_REQUEST_TIMEOUT);
 				timeoutThread.start();
+				logger.finer("Sending connect request packet");
 				sendPacket(Packet.createConnectRequestPacket());
 			}
 		} catch (UnknownHostException e) {
@@ -114,74 +116,106 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
-	public void receive(Packet packet, String address, int port) {
-		//ignore null packets or packets with invalid protocols
-		if(packet == null || !packet.isValidProtocol())
+	public void receivePacket(Packet packet, String address, int port) {
+		if(logger.isLoggable(Level.FINEST))
+			logger.finest("Incoming packet:" + (packet == null ? " null" : packet.toString().replaceAll("\n", "  \n")));
+
+		//ignore null packets
+		if(packet == null) {
+			logger.finer("Ignoring null packet");
 			return;
+		}
+
+		//ignore packets with invalid protocol bytes
+		if(!packet.isValidProtocol()) {
+			logger.finer("Ignoring packet with invalid protocol");
+			return;
+		}
 
 		//ugly, but I don't want the listener callbacks to be in a synchronized block--might consider refactoring
 		int listenerAction = -1;
 		String disconnectReason = null;
 
 		synchronized(CONNECTION_LOCK) {
-			//only process packets that match the server address and port we have on record
-			if((serverAddress == null ? address == null : serverAddress.equals(address)) && serverPort == port
-					&& (isAttemptingToConnect || isConnected)) {
-				synchronized(recorder) {
-					//only process packets we haven't received before
-					if(!recorder.hasRecordedIncomingPacket(packet)) {
-						//don't process packets if we've received duplicates of the packet before
-						if(!packet.isDuplicate() || !recorder.hasRecordedDuplicateOfIncomingPacket(packet)) {
-							//when attempting to connect we expect to receive either a connection refused or connection accepted packet
-							if(isAttemptingToConnect) {
-								switch(packet.getMessageType()) {
-									case CONNECTION_ACCEPTED:
-										acceptConnection(packet);
-										listenerAction = 1; //onConnected
-										break;
-									case CONNECTION_REFUSED:
-										logger.fine("Connection refused");
-										closeConnection();
-										listenerAction = 2; //onCouldNotConnect
-										break;
-								}
-							}
+			//ignore all packets if the client isn't connected or isn't attempting to connect to any server
+			if(!isAttemptingToConnect && !isConnected) {
+				logger.finer("Ignoring packet because the client is not connected to any server");
+				return;
+			}
 
-							//when already connected we expect application messages, pings, and disconnect notifications
-							else if(isConnected) {
-								switch(packet.getMessageType()) {
-									case APPLICATION:
-										logger.fine("Receiving message: " + packet.getMessage());
-										listenerAction = 3; //onReceive
-										timeoutThread.resetTimeout();
-										break;
-									case PING:
-										//respond to PINGs with PING_RESPONSEs
-										try {
-											sendPacket(Packet.createPingResponsePacket(clientId));
-										} catch (CouldNotSendPacketException e) {
-											//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
-										}
-										timeoutThread.resetTimeout();
-										break;
-									case PING_RESPONSE:
-										handlePingResponse(packet);
-										timeoutThread.resetTimeout();
-										break;
-									case FORCE_DISCONNECT:
-										logger.fine("Disconnected by server: " + packet.getMessage());
-										closeConnection();
-										disconnectReason = packet.getMessage();
-										listenerAction = 4; //onDisconnected
-										break;
-								}
-							}
-						}
+			//ignore packets that don't match the server address and port we have on record
+			if((serverAddress == null && address != null) || (serverAddress != null && !serverAddress.equals(address)) || serverPort != port) {
+				logger.finer("Ignoring packet from " + address + ":" + port + " because it is not from the server at " + serverAddress + ":" + serverPort);
+				return;
+			}
 
-						//record the packet as having been received (even if we've received a duplicate of it before)
-						recorder.recordIncomingPacket(packet);
+			synchronized(recorder) {
+				//ignore packets we've received before
+				if(recorder.hasRecordedIncomingPacket(packet)) {
+					logger.finer("Ignoring packet that has already been received before");
+					return;
+				}
+
+				//ignore duplicates of packets we've received before
+				if(packet.isDuplicate() && recorder.hasRecordedDuplicateOfIncomingPacket(packet)) {
+					logger.finer("Ignoring duplicate of packet that has already been received before");
+					recorder.recordIncomingPacket(packet); //we still want to record having received it (should be run AFTER hasRecordedDuplicateOfIncomingPacket)
+					return;
+				}
+
+				//when attempting to connect we expect to receive either a connection refused or connection accepted packet
+				if(isAttemptingToConnect) {
+					switch(packet.getMessageType()) {
+						case CONNECTION_ACCEPTED:
+							acceptConnection(packet);
+							listenerAction = 1; //onConnected
+							break;
+						case CONNECTION_REFUSED:
+							logger.fine("Connection refused");
+							closeConnection();
+							listenerAction = 2; //onCouldNotConnect
+							break;
+						default:
+							logger.finer("Ignoring " + packet.getMessageType() + " packet because only CONNECTION_ACCEPTED and CONNECTION_REFUSED packets are expected");
+							return;
 					}
 				}
+
+				//when already connected we expect application messages, pings, and disconnect notifications
+				else if(isConnected) {
+					switch(packet.getMessageType()) {
+						case APPLICATION:
+							logger.fine("Receiving message: " + packet.getMessage());
+							listenerAction = 3; //onReceive
+							timeoutThread.resetTimeout();
+							break;
+						case PING:
+							//respond to PING packets with a PING_RESPONSE packet
+							try {
+								sendPacket(Packet.createPingResponsePacket(clientId));
+							} catch (CouldNotSendPacketException e) {
+								//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
+							}
+							timeoutThread.resetTimeout();
+							break;
+						case PING_RESPONSE:
+							handlePingResponse(packet);
+							timeoutThread.resetTimeout();
+							break;
+						case FORCE_DISCONNECT:
+							logger.fine("Disconnected by server: " + packet.getMessage());
+							closeConnection();
+							disconnectReason = packet.getMessage();
+							listenerAction = 4; //onDisconnected
+							break;
+						default:
+							logger.finer("Ignoring " + packet.getMessageType() + " packet because only APPLICATION, PING, PING_RESPONSE and FORCE_DISCONNECT packets are expected");
+							return;
+					}
+				}
+
+				//record the packet as having been received
+				recorder.recordIncomingPacket(packet);
 			}
 		}
 
@@ -262,6 +296,7 @@ public class ClientConnection implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			try {
 				//inform the server of the client's intent to disconnect
+				logger.finer("Sending disconnect packet");
 				sendPacket(Packet.createClientDisconnectPacket(clientId));
 			}
 			catch(CouldNotSendPacketException e) {
@@ -272,6 +307,7 @@ public class ClientConnection implements PacketReceiver {
 	}
 
 	private void closeConnection() {
+		logger.finer("Closing connection to server");
 		synchronized(CONNECTION_LOCK) {
 			if(receivePacketThread != null)
 				receivePacketThread.stopReceiving();
@@ -300,15 +336,18 @@ public class ClientConnection implements PacketReceiver {
 
 	private int sendPacket(Packet packet) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		int sequenceNumber = -1;
-
 		synchronized(CONNECTION_LOCK) {
 			//regardless of whether the packet is valid, if the client is not connected then throw a NotConnectedException
-			if(!isConnected && !isAttemptingToConnect)
+			if(!isConnected && !isAttemptingToConnect) {
+				logger.finest("Outgoing packet: could not send because client is not connected");
 				throw new NotConnectedException(packet);
+			}
 
 			//there's no point in sending null packets, so throw a NullPacketException
-			if(packet == null)
+			if(packet == null) {
+				logger.finest("Outgoing packet: could not send because packet is null");
 				throw new NullPacketException();
+			}
 
 			synchronized(recorder) {
 				//add the sequenceNumber, lastReceivedSequenceNumber, and receivedPacketHistory to the packet which we've been
@@ -320,17 +359,21 @@ public class ClientConnection implements PacketReceiver {
 				try {
 					//attempt to send the packet
 					byte[] bytes = packet.toByteArray();
-			        DatagramPacket datagramPacket = new DatagramPacket(bytes, bytes.length, serverInetAddress, serverPort);
-			        socket.send(datagramPacket);
+					DatagramPacket datagramPacket = new DatagramPacket(bytes, bytes.length, serverInetAddress, serverPort);
+					socket.send(datagramPacket);
+					if(logger.isLoggable(Level.FINEST))
+						logger.finest("Outgoing packet:\n" + packet.toString().replaceAll("\n", "  \n"));
 				} catch (PacketEncodingException e) {
 					//encoding issues result when the packet contains connection id or sequence numbers that are out of range.
 					// we would not expect these to occur if everything is functioning as normal
 					recorder.recordPreviousOutgoingPacketNotSent();
+					logger.finest("Outgoing packet: could not send due to PacketEncodingException \"" + e.getMessage() + "\"");
 					throw new CouldNotEncodePacketException(e, packet);
 				}
 				catch (IOException e) {
 					//wrapping any IOException the socket might throw so calling send() only throws CouldNotSendPacketExceptions
 					recorder.recordPreviousOutgoingPacketNotSent();
+					logger.finest("Outgoing packet: could not send due to IOException \"" + e.getMessage() + "\"");
 					throw new PacketIOException(e, packet);
 				}
 			}
@@ -486,10 +529,6 @@ public class ClientConnection implements PacketReceiver {
 					Thread.sleep(Math.max(50, timeout - now + timeOfLastReset));
 				} catch (InterruptedException e) {}
 			}
-		}
-
-		public boolean isRunning() {
-			return isWaitingToTimeOut;
 		}
 
 		public void resetTimeout() {

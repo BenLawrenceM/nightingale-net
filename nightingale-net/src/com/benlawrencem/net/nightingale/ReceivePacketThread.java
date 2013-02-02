@@ -26,10 +26,10 @@ public class ReceivePacketThread extends Thread {
 				socket.receive(datagramPacket);
 				try {
 					Packet packet = Packet.parsePacket(datagramPacket.getData(), datagramPacket.getLength());
-					receiver.receive(packet, datagramPacket.getAddress().getHostAddress(), datagramPacket.getPort());
+					receiver.receivePacket(packet, datagramPacket.getAddress().getHostAddress(), datagramPacket.getPort());
 				} catch (MalformedPacketException e) {
 					//it might be valuable to inform the server that it's receiving invalid packets from a client
-					receiver.receive(null, datagramPacket.getAddress().getHostAddress(), datagramPacket.getPort());
+					receiver.receivePacket(null, datagramPacket.getAddress().getHostAddress(), datagramPacket.getPort());
 				}
 			} catch (IOException e) {
 				//if the packet is having trouble receiving, the best thing to
@@ -37,10 +37,6 @@ public class ReceivePacketThread extends Thread {
 				// will time out
 			}
 		}
-	}
-
-	public boolean isReceiving() {
-		return isReceiving;
 	}
 
 	public void stopReceiving() {
