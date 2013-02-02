@@ -2,12 +2,17 @@ package com.benlawrencem.net.nightingale;
 
 public interface ClientConnectionListener {
 	void onConnected();
-	void onCouldNotConnect();
-	void onDisconnected();
+	void onCouldNotConnect(String reason);
+	void onDisconnected(String reason);
 	void onReceive(String message);
 
 	/**
-	 * Called when the client fails to deliver a message to the server.
+	 * Called when a message to the server gets lost or fails to be delivered.
+	 * The message could actually still be delivered after this method is
+	 * called if it arrives at the server out of order. Resending the message
+	 * using the {@link ClientConnection.resend} method will guarantee that if
+	 * both the original message and the resent message are receiving, only
+	 * one will be processed.
 	 * 
 	 * @param messageId the id of the message that couldn't be delivered, as
 	 *  returned by {@link Server.send} and {@link Server.resend}

@@ -11,8 +11,14 @@ import java.util.logging.Logger;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
 public class ClientConnection implements PacketReceiver {
-	private final Logger logger = Logger.getLogger(ClientConnection.class.getName());
+	private static final Logger logger = Logger.getLogger(ClientConnection.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
+	private static final int CONNECT_REQUEST_TIMEOUT = 3000;
+	private static final int RECEIVE_PACKET_TIMEOUT = 3000;
+	private static final String CONNECT_REQUEST_REFUSED = "Connection refused by server.";
+	private static final String CONNECT_REQUEST_TIMED_OUT = "Connect request timed out.";
+	private static final String CONNECTION_TIMED_OUT = "Connection timed out.";
+	private static final String DISCONNECTED_BY_CLIENT = "Disconnect requested by client.";
 	private ClientConnectionListener listener;
 	private DatagramSocket socket;
 	private String serverAddress;
@@ -22,6 +28,8 @@ public class ClientConnection implements PacketReceiver {
 	private boolean isAttemptingToConnect;
 	private int clientId;
 	private PacketRecorder recorder;
+	private TimeoutThread timeoutThread;
+	private ReceivePacketThread receivePacketThread;
 
 	public ClientConnection() {
 		this(null);
@@ -49,7 +57,10 @@ public class ClientConnection implements PacketReceiver {
 				serverInetAddress = InetAddress.getByName(serverAddress);
 				serverPort = port;
 				socket = new DatagramSocket();
-				//TODO start receive thread
+				receivePacketThread = new ReceivePacketThread(this, socket);
+				receivePacketThread.start();
+				timeoutThread = new TimeoutThread(this, ClientConnection.CONNECT_REQUEST_TIMEOUT);
+				timeoutThread.start();
 				sendPacket(Packet.createConnectRequestPacket());
 			}
 		} catch (UnknownHostException e) {
@@ -64,7 +75,7 @@ public class ClientConnection implements PacketReceiver {
 		}
 		finally {
 			if(disconnected && listener != null)
-				listener.onDisconnected();
+				listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
 		}
 	}
 
@@ -84,7 +95,7 @@ public class ClientConnection implements PacketReceiver {
 			}
 		}
 		if(disconnected && listener != null)
-			listener.onDisconnected();
+			listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
 	}
 
 	public int send(String message) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
@@ -100,6 +111,7 @@ public class ClientConnection implements PacketReceiver {
 
 		//ugly, but I don't want the listener callbacks to be in a synchronized block--might consider refactoring
 		int listenerAction = -1;
+		String disconnectReason = null;
 
 		synchronized(CONNECTION_LOCK) {
 			//only process packets that match the server address and port we have on record
@@ -114,10 +126,7 @@ public class ClientConnection implements PacketReceiver {
 							if(isAttemptingToConnect) {
 								switch(packet.getMessageType()) {
 									case CONNECTION_ACCEPTED:
-										//the packet contains the client id we'll use for all future communications with the server
-										clientId = packet.getConnectionId();
-										isAttemptingToConnect = false;
-										isConnected = true; //we are now officially connected!
+										acceptConnection(packet);
 										listenerAction = 1; //onConnected
 										break;
 									case CONNECTION_REFUSED:
@@ -132,6 +141,7 @@ public class ClientConnection implements PacketReceiver {
 								switch(packet.getMessageType()) {
 									case APPLICATION:
 										listenerAction = 3; //onReceive
+										timeoutThread.resetTimeout();
 										break;
 									case PING:
 										//respond to PINGs with PING_RESPONSEs
@@ -140,12 +150,15 @@ public class ClientConnection implements PacketReceiver {
 										} catch (CouldNotSendPacketException e) {
 											//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
 										}
+										timeoutThread.resetTimeout();
 										break;
 									case PING_RESPONSE:
 										handlePingResponse(packet);
+										timeoutThread.resetTimeout();
 										break;
 									case FORCE_DISCONNECT:
 										closeConnection();
+										disconnectReason = packet.getMessage();
 										listenerAction = 4; //onDisconnected
 										break;
 								}
@@ -166,13 +179,13 @@ public class ClientConnection implements PacketReceiver {
 					listener.onConnected();
 					break;
 				case 2: //onCouldNotConnect
-					listener.onCouldNotConnect();
+					listener.onCouldNotConnect(ClientConnection.CONNECT_REQUEST_REFUSED);
 					break;
 				case 3: //onReceive
 					listener.onReceive(packet.getMessage());
 					break;
 				case 4: //onDisconnected
-					listener.onDisconnected();
+					listener.onDisconnected(disconnectReason);
 					break;
 			}
 		}
@@ -183,6 +196,48 @@ public class ClientConnection implements PacketReceiver {
 			Packet packet = Packet.createApplicationPacket(clientId, message);
 			packet.setDuplicateSequenceNumber(originalMessageId);
 			return sendPacket(packet);
+		}
+	}
+
+	private void acceptConnection(Packet packet) {
+		synchronized(CONNECTION_LOCK) {
+			//the packet contains the client id we'll use for all future communications with the server
+			clientId = packet.getConnectionId();
+			isAttemptingToConnect = false;
+			isConnected = true; //we are now officially connected!
+			timeoutThread.stopTimeout();
+			timeoutThread = new TimeoutThread(this, ClientConnection.RECEIVE_PACKET_TIMEOUT);
+			timeoutThread.start();
+		}
+	}
+
+	private void timeOut() {
+		boolean timedOutBeforeConnecting = false;
+		boolean timedOutAfterConnecting = false;
+		synchronized(CONNECTION_LOCK) {
+			if(isAttemptingToConnect) {
+				closeConnection();
+				timedOutBeforeConnecting = true;
+			}
+			else if(isConnected) {
+				disconnectQuietly();
+				timedOutAfterConnecting = true;
+			}
+			//it should be impossible for timedOut() to get called if the
+			// ClientConnection is neither connected nor attempting to connect,
+			// but we'll check for both separately and not assume anything
+		}
+
+		//once again, exactly one of these could be true, but we're making sure
+		// both don't get run and not assuming one not happening implies the
+		// other happening
+		if(listener != null) {
+			if(timedOutBeforeConnecting) {
+				listener.onCouldNotConnect(ClientConnection.CONNECT_REQUEST_TIMED_OUT);
+			}
+			else if(timedOutAfterConnecting) {
+				listener.onDisconnected(ClientConnection.CONNECTION_TIMED_OUT);
+			}
 		}
 	}
 
@@ -201,7 +256,10 @@ public class ClientConnection implements PacketReceiver {
 
 	private void closeConnection() {
 		synchronized(CONNECTION_LOCK) {
-			//TODO stop receive thread
+			if(receivePacketThread != null)
+				receivePacketThread.stopReceiving();
+			if(timeoutThread != null)
+				timeoutThread.stopTimeout();
 			if(socket != null)
 				socket.close();
 			reset();
@@ -217,6 +275,8 @@ public class ClientConnection implements PacketReceiver {
 			isConnected = false;
 			isAttemptingToConnect = false;
 			clientId = Packet.ANONYMOUS_CONNECTION_ID;
+			timeoutThread = null;
+			receivePacketThread = null;
 			recorder.reset();
 		}
 	}
@@ -366,6 +426,61 @@ public class ClientConnection implements PacketReceiver {
 
 		public IOException getException() {
 			return wrappedException;
+		}
+	}
+
+	/**
+	 * Responsible for informing the ClientConnection when it should time out.
+	 * 
+	 * Why is it a private class? So the {@link ClientConnection.timeOut}
+	 * method wouldn't affect the class's signature. The loss in readability to
+	 * developers is made up for in not polluting the public namespace for
+	 * anyone using this class.
+	 * 
+	 * Why is is a Thread? Ruminating on other possibilities.
+	 */
+	private static class TimeoutThread extends Thread {
+		private ClientConnection client;
+		private int timeout;
+		private boolean isWaitingToTimeOut;
+		private long timeOfLastReset;
+
+		public TimeoutThread(ClientConnection client, int timeoutInMilliseconds) {
+			super();
+			this.client = client;
+			timeout = timeoutInMilliseconds;
+			isWaitingToTimeOut = false;
+		}
+
+		public void run() {
+			isWaitingToTimeOut = true;
+			resetTimeout();
+			while(isWaitingToTimeOut) {
+				//if the thread was last reset over [timeout] milliseconds ago then the client has timed out
+				long now = System.currentTimeMillis();
+				if(now >= timeOfLastReset + timeout) {
+					isWaitingToTimeOut = false;
+					if(client != null)
+						client.timeOut();
+				}
+
+				//wait an amount of time until thread should have timed out
+				try {
+					Thread.sleep(Math.max(50, timeout - now + timeOfLastReset));
+				} catch (InterruptedException e) {}
+			}
+		}
+
+		public boolean isRunning() {
+			return isWaitingToTimeOut;
+		}
+
+		public void resetTimeout() {
+			timeOfLastReset = System.currentTimeMillis();
+		}
+
+		public void stopTimeout() {
+			isWaitingToTimeOut = false;
 		}
 	}
 }

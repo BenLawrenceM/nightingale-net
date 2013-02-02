@@ -1211,16 +1211,20 @@ public class PacketTest extends TestCase {
 	@Test
 	public void testCreateForceDisconnectPacket() {
 		assertNotNull(forceDisconnectPacket);
-		assertNotNull(Packet.createForceDisconnectPacket(Packet.ANONYMOUS_CONNECTION_ID));
-		assertNotNull(Packet.createForceDisconnectPacket(Packet.MINIMUM_CONNECTION_ID));
-		assertNotNull(Packet.createForceDisconnectPacket(Packet.MAXIMUM_CONNECTION_ID));
-		assertNotNull(Packet.createForceDisconnectPacket(0));
-		assertNotNull(Packet.createForceDisconnectPacket(1));
-		assertNotNull(Packet.createForceDisconnectPacket(100));
-		assertNotNull(Packet.createForceDisconnectPacket(254));
-		assertNotNull(Packet.createForceDisconnectPacket(255));
-		assertEquals(100, Packet.createForceDisconnectPacket(100).getConnectionId());
-		assertEquals(MessageType.FORCE_DISCONNECT, Packet.createForceDisconnectPacket(100).getMessageType());
+		assertNotNull(Packet.createForceDisconnectPacket(Packet.ANONYMOUS_CONNECTION_ID, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(Packet.MINIMUM_CONNECTION_ID, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(Packet.MAXIMUM_CONNECTION_ID, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(0, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(1, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(100, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(101, null));
+		assertNotNull(Packet.createForceDisconnectPacket(102, "`1234567890-~!@#$%^&*()_+[]\\{}|;\":'<>?,./"));
+		assertNotNull(Packet.createForceDisconnectPacket(103, ""));
+		assertNotNull(Packet.createForceDisconnectPacket(254, "REASON"));
+		assertNotNull(Packet.createForceDisconnectPacket(255, "REASON"));
+		assertEquals(100, Packet.createForceDisconnectPacket(100, "REASON").getConnectionId());
+		assertEquals(MessageType.FORCE_DISCONNECT, Packet.createForceDisconnectPacket(100, "REASON").getMessageType());
+		assertEquals("REASON", Packet.createForceDisconnectPacket(100, "REASON").getMessage());
 	}
 
 	@Test

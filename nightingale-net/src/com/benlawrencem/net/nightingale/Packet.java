@@ -11,6 +11,7 @@ public class Packet {
 	public static final int SEQUENCE_NUMBER_NOT_APPLICABLE = 0;
 	public static final int MINIMUM_SEQUENCE_NUMBER = 1;
 	public static final int MAXIMUM_SEQUENCE_NUMBER = 65535;
+	public static final int MAXIMUM_PACKET_SIZE = 512;
 
 	public static enum MessageType {
 		INVALID, APPLICATION, PING, PING_RESPONSE, CONNECT_REQUEST,
@@ -388,8 +389,8 @@ public class Packet {
 		return new Packet(Packet.ANONYMOUS_CONNECTION_ID, MessageType.CONNECTION_REFUSED, null);
 	}
 
-	public static Packet createForceDisconnectPacket(int connectionId) {
-		return new Packet(connectionId, MessageType.FORCE_DISCONNECT, null);
+	public static Packet createForceDisconnectPacket(int connectionId, String message) {
+		return new Packet(connectionId, MessageType.FORCE_DISCONNECT, message);
 	}
 
 	public static Packet createClientDisconnectPacket(int connectionId) {
