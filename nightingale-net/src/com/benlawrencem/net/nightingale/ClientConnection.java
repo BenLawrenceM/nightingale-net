@@ -38,18 +38,21 @@ public class ClientConnection implements PacketReceiver {
 	public ClientConnection(ClientConnectionListener listener) {
 		this.listener = listener;
 		recorder = new PacketRecorder();
-		reset();
+		resetVariables();
 	}
 
 	public void connect(String address, int port) throws ServerNotFoundException, CouldNotOpenSocketToServerException, CouldNotSendConnectRequestException {
+		logger.fine("Connecting to " + address + ":" + port + "...");
 		boolean disconnected = false;
 		try {
 			synchronized(CONNECTION_LOCK) {
 				if(isConnected) {
+					logger.fine("Disconnecting from " + serverAddress + ":" + serverPort + " so client can connect to " + address + ":" + port);
 					disconnectQuietly();
 					disconnected = true;
 				}
 				else if(isAttemptingToConnect) {
+					logger.fine("Cancelling connect request to " + serverAddress + ":" + serverPort + " so client can connect to " + address + ":" + port);
 					closeConnection();
 				}
 				isAttemptingToConnect = true;
@@ -65,17 +68,21 @@ public class ClientConnection implements PacketReceiver {
 			}
 		} catch (UnknownHostException e) {
 			closeConnection();
-			throw new ServerNotFoundException(address, port);
+			logger.fine("Could not connect due to UnknownHostException: " + e.getMessage());
+			throw new ServerNotFoundException(address, port); //wrapped so callers can just catch CouldNotConnectException
 		} catch (SocketException e) {
 			closeConnection();
+			logger.fine("Could not connect due to SocketException: " + e.getMessage());
 			throw new CouldNotOpenSocketToServerException(e);
 		} catch (CouldNotSendPacketException e) {
 			closeConnection();
+			logger.fine("Could not connect due to CouldNotSendPacketException while sending connect request: " + e.getMessage());
 			throw new CouldNotSendConnectRequestException(e);
 		}
 		finally {
-			if(disconnected && listener != null)
+			if(disconnected && listener != null) {
 				listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
+			}
 		}
 	}
 
@@ -87,10 +94,12 @@ public class ClientConnection implements PacketReceiver {
 		boolean disconnected = false;
 		synchronized(CONNECTION_LOCK) {
 			if(isConnected) {
+				logger.fine("Disconnecting from " + serverAddress + ":" + serverPort);
 				disconnectQuietly();
 				disconnected = true;
 			}
 			else if(isAttemptingToConnect) {
+				logger.fine("Cancelling connect request to " + serverAddress + ":" + serverPort);
 				closeConnection();
 			}
 		}
@@ -100,6 +109,7 @@ public class ClientConnection implements PacketReceiver {
 
 	public int send(String message) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		synchronized(CONNECTION_LOCK) {
+			logger.fine("Sending message:   " + message);
 			return sendPacket(Packet.createApplicationPacket(clientId, message));
 		}
 	}
@@ -130,16 +140,18 @@ public class ClientConnection implements PacketReceiver {
 										listenerAction = 1; //onConnected
 										break;
 									case CONNECTION_REFUSED:
+										logger.fine("Connection refused");
 										closeConnection();
 										listenerAction = 2; //onCouldNotConnect
 										break;
 								}
 							}
-		
+
 							//when already connected we expect application messages, pings, and disconnect notifications
 							else if(isConnected) {
 								switch(packet.getMessageType()) {
 									case APPLICATION:
+										logger.fine("Receiving message: " + packet.getMessage());
 										listenerAction = 3; //onReceive
 										timeoutThread.resetTimeout();
 										break;
@@ -157,6 +169,7 @@ public class ClientConnection implements PacketReceiver {
 										timeoutThread.resetTimeout();
 										break;
 									case FORCE_DISCONNECT:
+										logger.fine("Disconnected by server: " + packet.getMessage());
 										closeConnection();
 										disconnectReason = packet.getMessage();
 										listenerAction = 4; //onDisconnected
@@ -164,7 +177,7 @@ public class ClientConnection implements PacketReceiver {
 								}
 							}
 						}
-	
+
 						//record the packet as having been received (even if we've received a duplicate of it before)
 						recorder.recordIncomingPacket(packet);
 					}
@@ -193,6 +206,7 @@ public class ClientConnection implements PacketReceiver {
 
 	public int resend(int originalMessageId, String message) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		synchronized(CONNECTION_LOCK) {
+			logger.fine("Resending message: " + message);
 			Packet packet = Packet.createApplicationPacket(clientId, message);
 			packet.setDuplicateSequenceNumber(originalMessageId);
 			return sendPacket(packet);
@@ -202,6 +216,7 @@ public class ClientConnection implements PacketReceiver {
 	private void acceptConnection(Packet packet) {
 		synchronized(CONNECTION_LOCK) {
 			//the packet contains the client id we'll use for all future communications with the server
+			logger.fine("Connected to " + serverAddress + ":" + serverPort +" as client " + clientId + "!");
 			clientId = packet.getConnectionId();
 			isAttemptingToConnect = false;
 			isConnected = true; //we are now officially connected!
@@ -216,10 +231,12 @@ public class ClientConnection implements PacketReceiver {
 		boolean timedOutAfterConnecting = false;
 		synchronized(CONNECTION_LOCK) {
 			if(isAttemptingToConnect) {
+				logger.fine("Connection to " + serverAddress + ":" + serverPort + " timed out");
 				closeConnection();
 				timedOutBeforeConnecting = true;
 			}
 			else if(isConnected) {
+				logger.fine("Connect request to " + serverAddress + ":" + serverPort + " timed out");
 				disconnectQuietly();
 				timedOutAfterConnecting = true;
 			}
@@ -262,11 +279,11 @@ public class ClientConnection implements PacketReceiver {
 				timeoutThread.stopTimeout();
 			if(socket != null)
 				socket.close();
-			reset();
+			resetVariables();
 		}
 	}
 
-	private void reset() {
+	private void resetVariables() {
 		synchronized(CONNECTION_LOCK) {
 			socket = null;
 			serverAddress = null;
