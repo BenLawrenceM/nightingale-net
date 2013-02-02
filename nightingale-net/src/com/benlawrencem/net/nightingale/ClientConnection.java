@@ -42,7 +42,7 @@ public class ClientConnection implements PacketReceiver {
 		resetVariables();
 	}
 
-	public void connect(String address, int port) throws ServerNotFoundException, CouldNotOpenSocketToServerException, CouldNotSendConnectRequestException {
+	public void connect(String address, int port) throws CouldNotConnectException {
 		logger.fine("Connecting to " + address + ":" + port + "...");
 		boolean disconnected = false;
 		try {
@@ -109,7 +109,7 @@ public class ClientConnection implements PacketReceiver {
 			listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
 	}
 
-	public int send(String message) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
+	public int send(String message) throws CouldNotSendPacketException {
 		synchronized(CONNECTION_LOCK) {
 			logger.fine("Sending message:   " + message);
 			return sendPacket(Packet.createApplicationPacket(clientId, message));
@@ -238,7 +238,7 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
-	public int resend(int originalMessageId, String message) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
+	public int resend(int originalMessageId, String message) throws CouldNotSendPacketException {
 		synchronized(CONNECTION_LOCK) {
 			logger.fine("Resending message: " + message);
 			Packet packet = Packet.createApplicationPacket(clientId, message);
@@ -391,7 +391,7 @@ public class ClientConnection implements PacketReceiver {
 		private static final long serialVersionUID = -8997925597566127340L;
 
 		public CouldNotConnectException(String message) {
-			super("Could not connect to server: " + message);
+			super(message);
 		}
 	}
 
