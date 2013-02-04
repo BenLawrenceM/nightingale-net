@@ -116,6 +116,15 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
+	public int resend(int originalMessageId, String message) throws CouldNotSendPacketException {
+		synchronized(CONNECTION_LOCK) {
+			logger.fine("Resending message: " + message);
+			Packet packet = Packet.createApplicationPacket(clientId, message);
+			packet.setDuplicateSequenceNumber(originalMessageId);
+			return sendPacket(packet);
+		}
+	}
+
 	public void receivePacket(Packet packet, String address, int port) {
 		if(logger.isLoggable(Level.FINEST))
 			logger.finest("Incoming packet:" + (packet == null ? " null" : "  " + packet.toString().replaceAll("\n", "\n  ")));
@@ -235,15 +244,6 @@ public class ClientConnection implements PacketReceiver {
 					listener.onDisconnected(disconnectReason);
 					break;
 			}
-		}
-	}
-
-	public int resend(int originalMessageId, String message) throws CouldNotSendPacketException {
-		synchronized(CONNECTION_LOCK) {
-			logger.fine("Resending message: " + message);
-			Packet packet = Packet.createApplicationPacket(clientId, message);
-			packet.setDuplicateSequenceNumber(originalMessageId);
-			return sendPacket(packet);
 		}
 	}
 
