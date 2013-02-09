@@ -141,7 +141,7 @@ public class ClientConnection implements PacketReceiver {
 			return;
 		}
 
-		//ugly, but I don't want the listener callbacks to be in a synchronized block--might consider refactoring
+		//ugly, but I don't want the listener callbacks to be in a synchronized block
 		int listenerAction = -1;
 		String disconnectReason = null;
 
@@ -168,9 +168,12 @@ public class ClientConnection implements PacketReceiver {
 				//ignore duplicates of packets we've received before
 				if(packet.isDuplicate() && recorder.hasRecordedDuplicateOfIncomingPacket(packet)) {
 					logger.finer("Ignoring duplicate of packet that has already been received before");
-					recorder.recordIncomingPacket(packet); //we still want to record having received it (should be run AFTER hasRecordedDuplicateOfIncomingPacket)
+					recorder.recordIncomingPacket(packet); //we still want to record having received it (must be run AFTER hasRecordedDuplicateOfIncomingPacket)
 					return;
 				}
+
+				//record the packet as having been received
+				recorder.recordIncomingPacket(packet);
 
 				//when attempting to connect we expect to receive either a connection refused or connection accepted packet
 				if(isAttemptingToConnect) {
@@ -199,7 +202,6 @@ public class ClientConnection implements PacketReceiver {
 							timeoutThread.resetTimeout();
 							break;
 						case PING:
-							//respond to PING packets with a PING_RESPONSE packet
 							try {
 								sendPacket(Packet.createPingResponsePacket(clientId));
 							} catch (CouldNotSendPacketException e) {
@@ -222,9 +224,6 @@ public class ClientConnection implements PacketReceiver {
 							return;
 					}
 				}
-
-				//record the packet as having been received
-				recorder.recordIncomingPacket(packet);
 			}
 		}
 
