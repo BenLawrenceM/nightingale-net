@@ -73,7 +73,7 @@ public class CountingServer implements ServerListener {
 		System.out.println("Received " + message + " from client " + clientId);
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending " + x + " to client " + clientId);
+			System.out.println("Sending  " + x + " to client " + clientId);
 			try {
 				server.send(clientId, "" + x);
 			} catch (CouldNotSendPacketException e) {

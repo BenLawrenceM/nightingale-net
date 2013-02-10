@@ -82,7 +82,7 @@ public class CountingClient implements ClientConnectionListener {
 		System.out.println("Received " + message);
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending " + x);
+			System.out.println("Sending  " + x);
 			try {
 				conn.send("" + x);
 			} catch (CouldNotSendPacketException e) {

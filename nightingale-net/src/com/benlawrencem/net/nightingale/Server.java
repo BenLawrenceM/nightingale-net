@@ -38,13 +38,18 @@ public class Server implements PacketReceiver {
 	}
 
 	public void startServer(int port) throws CouldNotStartServerException {
+		logger.fine("Starting server on port " + port + "...");
 		synchronized(CONNECTION_LOCK) {
-			if(isRunning)
+			if(isRunning) {
+				logger.fine("Server is already started!");
 				throw new ServerAlreadyStartedException();
+			}
 			try {
 				socket = new DatagramSocket(port);
 				receivePacketThread = new ReceivePacketThread(this, socket);
 				receivePacketThread.start();
+				isRunning = true;
+				logger.fine("Server is open and receiving connections!");
 			} catch (SocketException e) {
 				closeConnection();
 				logger.fine("Could not start server due to SocketException: " + e.getMessage());
@@ -58,10 +63,12 @@ public class Server implements PacketReceiver {
 	}
 
 	public void stopServer() {
+		logger.fine("Stopping server...");
 		boolean wasRunning = false;
 		synchronized(CONNECTION_LOCK) {
 			wasRunning = isRunning;
 			if(isRunning) {
+				logger.finer("Sending disconnect packets to all clients");
 				for(Integer clientId : clients.keySet()) {
 					ServerClientConnection client = clients.get(clientId);
 					try {
@@ -76,9 +83,11 @@ public class Server implements PacketReceiver {
 		}
 		if(wasRunning && listener != null)
 			listener.onServerStopped();
+		logger.fine("Server stopped");
 	}
 
 	public void dropClient(int clientId, String reason) {
+		logger.finer("Dropping client " + clientId + ": " + reason);
 		boolean clientDropped = false;
 		synchronized(CONNECTION_LOCK) {
 			if(clients.containsKey(clientId)) {
@@ -91,6 +100,9 @@ public class Server implements PacketReceiver {
 				clients.remove(clientId);
 				clientDropped = true;
 			}
+			else {
+				logger.finer("Client " + clientId + " could not be dropped: Client not connected.");
+			}
 		}
 		if(clientDropped && listener != null)
 			listener.onClientDisconnected(clientId, Server.DROPPED_BY_SERVER);
@@ -101,8 +113,10 @@ public class Server implements PacketReceiver {
 			Packet packet = Packet.createApplicationPacket(clientId, message);
 
 			//if the client isn't connected then throw an exception
-			if(!clients.containsKey(clientId))
+			if(!clients.containsKey(clientId)) {
+				logger.fine("Could not send message to client " + clientId + ": Client not connected.");
 				throw new ClientNotConnectedException(clientId, packet);
+			}
 
 			logger.fine("Sending message to client " + clientId + ": " + message);
 			ServerClientConnection client = clients.get(clientId);
@@ -116,10 +130,12 @@ public class Server implements PacketReceiver {
 			packet.setDuplicateSequenceNumber(originalMessageId);
 
 			//if the client isn't connected then throw an exception
-			if(!clients.containsKey(clientId))
+			if(!clients.containsKey(clientId)) {
+				logger.fine("Could not resend message to client " + clientId + ": Client not connected.");
 				throw new ClientNotConnectedException(clientId, packet);
+			}
 
-			logger.fine("Sending message to client " + clientId + ": " + message);
+			logger.fine("Resending message to client " + clientId + ": " + message);
 			ServerClientConnection client = clients.get(clientId);
 			return sendPacket(packet, client);
 		}
@@ -127,7 +143,7 @@ public class Server implements PacketReceiver {
 
 	public void receivePacket(Packet packet, String address, int port) {
 		if(logger.isLoggable(Level.FINEST))
-			logger.finest("Incoming packet from " + address + ":" + port + ":" + (packet == null ? " null" : "  " + packet.toString().replaceAll("\n", "\n  ")));
+			logger.finest("Incoming packet from " + address + ":" + port + ":" + (packet == null ? " null" : "\n  " + packet.toString().replaceAll("\n", "\n  ")));
 
 		//ignore null packets
 		if(packet == null) {
@@ -153,7 +169,8 @@ public class Server implements PacketReceiver {
 
 			if(packet.isAnonymousConnection()) {
 				if(packet.getMessageType() == MessageType.CONNECT_REQUEST) {
-					listenerAction = 1; //onClientConnected
+					logger.finest("Client is requesting connection");
+					listenerAction = 1; //accept/reject connection
 				}
 				else {
 					logger.finer("Ignoring " + packet.getMessageType() + " packet because only CONNECT_REQUEST packets are expected");
@@ -229,10 +246,13 @@ public class Server implements PacketReceiver {
 			switch(listenerAction) {
 				case 1: //onClientConnected
 					int clientId = getNextClientId();
+					logger.finest("Client " + clientId + " asking for permission to connect to server");
 					if(listener.onClientConnected(clientId, address ,port)) {
+						logger.finest("Permission to connect granted to client " + clientId);
 						acceptClient(clientId, address, port);
 					}
 					else {
+						logger.finest("Permission to connect refused for client " + clientId);
 						rejectClient(clientId, address, port);
 					}
 					break;
@@ -247,6 +267,7 @@ public class Server implements PacketReceiver {
 	}
 
 	private void closeConnection() {
+		logger.finer("Closing server connection");
 		synchronized(CONNECTION_LOCK) {
 			if(receivePacketThread != null)
 				receivePacketThread.stopReceiving();
@@ -331,7 +352,7 @@ public class Server implements PacketReceiver {
 					DatagramPacket datagramPacket = new DatagramPacket(bytes, bytes.length, client.getInetAddress(), client.getPort());
 					socket.send(datagramPacket);
 					if(logger.isLoggable(Level.FINEST))
-						logger.finest("Outgoing packet:\n  " + packet.toString().replaceAll("\n", "\n  "));
+						logger.finest("Outgoing packet to " + client.getAddress() + ":" + client.getPort() + ":\n  " + packet.toString().replaceAll("\n", "\n  "));
 				} catch (PacketEncodingException e) {
 					//encoding issues result when the packet contains connection id or sequence numbers that are out of range.
 					// we would not expect these to occur if everything is functioning as normal
@@ -357,12 +378,16 @@ public class Server implements PacketReceiver {
 	}
 
 	private int getNextClientId() {
+		logger.finest("Getting next client id...");
 		synchronized(CONNECTION_LOCK) {
-			if(clients.size() > Packet.MAXIMUM_CONNECTION_ID - Packet.MINIMUM_CONNECTION_ID)
+			if(clients.size() > Packet.MAXIMUM_CONNECTION_ID - Packet.MINIMUM_CONNECTION_ID) {
+				logger.finer("Assigning anonymous connection id of " + Packet.ANONYMOUS_CONNECTION_ID + " to client because server has maximum of " + (Packet.MAXIMUM_CONNECTION_ID - Packet.MINIMUM_CONNECTION_ID) + " connections");
 				return Packet.ANONYMOUS_CONNECTION_ID;
+			}
 			do {
-				Packet.nextConnectionId(lastConnectedClientId);
+				lastConnectedClientId = Packet.nextConnectionId(lastConnectedClientId);
 			} while(clients.containsKey(lastConnectedClientId));
+			logger.finest("Next client id is " + lastConnectedClientId);
 			return lastConnectedClientId;
 		}
 	}

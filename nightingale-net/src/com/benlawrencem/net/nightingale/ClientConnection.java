@@ -131,7 +131,7 @@ public class ClientConnection implements PacketReceiver {
 
 	public void receivePacket(Packet packet, String address, int port) {
 		if(logger.isLoggable(Level.FINEST))
-			logger.finest("Incoming packet:" + (packet == null ? " null" : "  " + packet.toString().replaceAll("\n", "\n  ")));
+			logger.finest("Incoming packet:" + (packet == null ? " null" : "\n  " + packet.toString().replaceAll("\n", "\n  ")));
 
 		//ignore null packets
 		if(packet == null) {
