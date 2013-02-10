@@ -9,6 +9,10 @@ import java.net.UnknownHostException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
+import com.benlawrencem.net.nightingale.Packet.NullPacketException;
+import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
+import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
 public class ClientConnection implements PacketReceiver {
@@ -430,61 +434,11 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
-	public static abstract class CouldNotSendPacketException extends Exception {
-		private static final long serialVersionUID = 4469495505607428313L;
-		private Packet packet;
-
-		public CouldNotSendPacketException(String message, Packet packet) {
-			super("Could not send packet: " + message);
-			this.packet = packet;
-		}
-
-		public Packet getPacket() {
-			return packet;
-		}
-	}
-
 	public static class NotConnectedException extends CouldNotSendPacketException {
 		private static final long serialVersionUID = 7207922501617442210L;
 
 		public NotConnectedException(Packet packet) {
 			super("Client is not connected to server.", packet);
-		}
-	}
-
-	public static class NullPacketException extends CouldNotSendPacketException {
-		private static final long serialVersionUID = 245600094593694576L;
-
-		public NullPacketException() {
-			super("Packet is null.", null);
-		}
-	}
-
-	public static class CouldNotEncodePacketException extends CouldNotSendPacketException {
-		private static final long serialVersionUID = 217976733885663032L;
-		private PacketEncodingException wrappedException;
-
-		public CouldNotEncodePacketException(PacketEncodingException e, Packet packet) {
-			super("Packet not encodable" + (e == null ? "." : "--" + e.getMessage()), packet);
-			wrappedException = e;
-		}
-
-		public PacketEncodingException getException() {
-			return wrappedException;
-		}
-	}
-
-	public static class PacketIOException extends CouldNotSendPacketException {
-		private static final long serialVersionUID = 3176188125504255759L;
-		private IOException wrappedException;
-
-		private PacketIOException(IOException e, Packet packet) {
-			super("Issue sending packet to server" + (e == null ? "." : "--" + e.getMessage()), packet);
-			wrappedException = e;
-		}
-
-		public IOException getException() {
-			return wrappedException;
 		}
 	}
 

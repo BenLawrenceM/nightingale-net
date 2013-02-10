@@ -7,8 +7,8 @@ import java.util.logging.StreamHandler;
 
 import com.benlawrencem.net.nightingale.ClientConnection;
 import com.benlawrencem.net.nightingale.ClientConnection.CouldNotConnectException;
-import com.benlawrencem.net.nightingale.ClientConnection.CouldNotSendPacketException;
 import com.benlawrencem.net.nightingale.ClientConnectionListener;
+import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
 
 public class CountingClient implements ClientConnectionListener {
 	public static void main(String[] args) {

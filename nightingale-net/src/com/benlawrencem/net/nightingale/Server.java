@@ -1,5 +1,6 @@
 package com.benlawrencem.net.nightingale;
 
+import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
@@ -9,12 +10,13 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.benlawrencem.net.nightingale.ClientConnection.CouldNotEncodePacketException;
-import com.benlawrencem.net.nightingale.ClientConnection.CouldNotSendPacketException;
 import com.benlawrencem.net.nightingale.ClientConnection.NotConnectedException;
-import com.benlawrencem.net.nightingale.ClientConnection.NullPacketException;
-import com.benlawrencem.net.nightingale.ClientConnection.PacketIOException;
+import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
+import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
 import com.benlawrencem.net.nightingale.Packet.MessageType;
+import com.benlawrencem.net.nightingale.Packet.NullPacketException;
+import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
+import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 
 public class Server implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(Server.class.getName());
@@ -32,10 +34,10 @@ public class Server implements PacketReceiver {
 		resetParameters();
 	}
 
-	public void startServer(int port) {
+	public void startServer(int port) throws CouldNotStartServerException {
 		synchronized(CONNECTION_LOCK) {
 			if(isRunning)
-				return; //TODO throw new ServerAlreadyStartedException();
+				throw new ServerAlreadyStartedException();
 			try {
 				socket = new DatagramSocket(port);
 				receivePacketThread = new ReceivePacketThread(this, socket);
@@ -43,7 +45,7 @@ public class Server implements PacketReceiver {
 			} catch (SocketException e) {
 				closeConnection();
 				logger.fine("Could not start server due to SocketException: " + e.getMessage());
-				return; //TODO throw new CouldNotOpenSocketException(e);
+				throw new CouldNotOpenServerSocketException(e, port);
 			}
 		}
 		if(listener != null)
@@ -97,7 +99,7 @@ public class Server implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			//if the client isn't connected then throw an exception
 			if(!clients.containsKey(clientId))
-				return -1; //TOOD throw ClientNotConnectedException
+				return -1; //TODO throw ClientNotConnectedException
 
 			logger.fine("Sending message to client " + clientId + ": " + message);
 			ServerClientConnection client = clients.get(clientId);
@@ -105,9 +107,18 @@ public class Server implements PacketReceiver {
 		}
 	}
 
-	public int resend(int clientId, int originalMessageId, String message) {
-		//TODO implement
-		return -1;
+	public int resend(int clientId, int originalMessageId, String message) throws CouldNotSendPacketException {
+		synchronized(CONNECTION_LOCK) {
+			//if the client isn't connected then throw an exception
+			if(!clients.containsKey(clientId))
+				return -1; //TODO throw ClientNotConnectedException
+
+			logger.fine("Sending message to client " + clientId + ": " + message);
+			ServerClientConnection client = clients.get(clientId);
+			Packet packet = Packet.createApplicationPacket(clientId, message);
+			packet.setDuplicateSequenceNumber(originalMessageId);
+			return sendPacket(packet, client.getInetAddress(), client.getPort());
+		}
 	}
 
 	public void receivePacket(Packet packet, String address, int port) {
@@ -293,7 +304,7 @@ public class Server implements PacketReceiver {
 		//TODO implement
 	}
 
-	private int sendPacket(Packet packet, InetAddress inetAddress, int port) throws NotConnectedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
+	private int sendPacket(Packet packet, InetAddress inetAddress, int port) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		//TODO implement
 		return -1;
 	}
@@ -310,6 +321,44 @@ public class Server implements PacketReceiver {
 				Packet.nextConnectionId(lastConnectedClientId);
 			} while(clients.containsKey(lastConnectedClientId));
 			return lastConnectedClientId;
+		}
+	}
+
+	public static abstract class CouldNotStartServerException extends Exception {
+		private static final long serialVersionUID = -6383721472101600079L;
+
+		public CouldNotStartServerException(String message) {
+			super(message);
+		}
+	}
+
+	public class ServerAlreadyStartedException extends CouldNotStartServerException {
+		private static final long serialVersionUID = 3824340604720308489L;
+
+		public ServerAlreadyStartedException() {
+			super("Could not start server because it is already started.");
+		}
+	}
+
+	public class CouldNotOpenServerSocketException extends CouldNotStartServerException {
+		private static final long serialVersionUID = -6736257520912125766L;
+		private SocketException wrappedException;
+
+		public CouldNotOpenServerSocketException(SocketException e, int port) {
+			super("Could not open server socket on port " + port + ".");
+			wrappedException = e;
+		}
+
+		public SocketException getException() {
+			return wrappedException;
+		}
+	}
+
+	public static class ServerNotStartedException extends CouldNotSendPacketException {
+		private static final long serialVersionUID = 324615594029936997L;
+
+		public ServerNotStartedException(Packet packet) {
+			super("Server is not started.", packet);
 		}
 	}
 }
