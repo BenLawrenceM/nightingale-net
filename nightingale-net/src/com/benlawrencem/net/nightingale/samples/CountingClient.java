@@ -19,8 +19,7 @@ public class CountingClient implements ClientConnectionListener {
 		if(args != null && args.length > 1 && args[1] != null && !args[1].equals("") && !args[1].equals("-") && !args[1].equalsIgnoreCase("default")) {
 			try {
 				port = Integer.parseInt(args[1]);
-			}
-			catch(NumberFormatException e) {
+			} catch(NumberFormatException e) {
 				port = 9876;
 			}
 		}
@@ -52,7 +51,7 @@ public class CountingClient implements ClientConnectionListener {
 	}
 	
 	public void connect(String address, int port) {
-		System.out.println("Connecting to " + address + ":" + port + "...");
+		System.out.println("Connecting to " + address + ":" + port);
 		try {
 			conn.connect(address, port);
 		} catch (CouldNotConnectException e) {
@@ -87,11 +86,11 @@ public class CountingClient implements ClientConnectionListener {
 			try {
 				conn.send("" + x);
 			} catch (CouldNotSendPacketException e) {
-				System.out.println("Could not send packet: " + e.getMessage());
+				System.out.println("Could not send " + x + ": " + e.getMessage());
 				conn.disconnect();
 			}
 		} catch(NumberFormatException e) {
-			System.out.println("Could not send packet: Received packet is not an integer.");
+			System.out.println("Received non-integer");
 			conn.disconnect();
 		}
 	}

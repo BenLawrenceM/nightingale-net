@@ -1,10 +1,9 @@
 package com.benlawrencem.net.nightingale;
 
 public interface ServerListener {
-	void onServerStarted();
 	void onServerStopped();
 	boolean onClientConnected(int clientId, String address, int port);
-	void onClientDisconnected(int clientId);
+	void onClientDisconnected(int clientId, String reason);
 	void onReceive(int clientId, String message);
 
 	/**

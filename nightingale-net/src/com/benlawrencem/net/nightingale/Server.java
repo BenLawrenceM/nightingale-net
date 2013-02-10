@@ -1,6 +1,7 @@
 package com.benlawrencem.net.nightingale;
 
 import java.io.IOException;
+import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
@@ -10,7 +11,6 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.benlawrencem.net.nightingale.ClientConnection.NotConnectedException;
 import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
 import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
 import com.benlawrencem.net.nightingale.Packet.MessageType;
@@ -22,6 +22,9 @@ public class Server implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(Server.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
 	private static final String SERVER_STOPPING = "Server stopping.";
+	private static final String DISCONNECT_BY_CLIENT = "Disconnect requested by client.";
+	private static final String DROPPED_BY_SERVER = "Client cropped by server.";
+	private static final String CLIENT_COULD_NOT_CONNECT = "Could not accept client connection.";
 	private ServerListener listener;
 	private DatagramSocket socket;
 	private boolean isRunning;
@@ -48,8 +51,6 @@ public class Server implements PacketReceiver {
 				throw new CouldNotOpenServerSocketException(e, port);
 			}
 		}
-		if(listener != null)
-			listener.onServerStarted();
 	}
 
 	public boolean isRunning() {
@@ -64,7 +65,7 @@ public class Server implements PacketReceiver {
 				for(Integer clientId : clients.keySet()) {
 					ServerClientConnection client = clients.get(clientId);
 					try {
-						sendPacket(Packet.createForceDisconnectPacket(clientId, Server.SERVER_STOPPING), client.getInetAddress(), client.getPort());
+						sendPacket(Packet.createForceDisconnectPacket(clientId, Server.SERVER_STOPPING), client);
 					} catch (CouldNotSendPacketException e) {
 						//no need to report that we couldn't ask the client to disconnect--the server is stopping regardless
 					}
@@ -83,41 +84,44 @@ public class Server implements PacketReceiver {
 			if(clients.containsKey(clientId)) {
 				ServerClientConnection client = clients.get(clientId);
 				try {
-					sendPacket(Packet.createForceDisconnectPacket(clientId, reason), client.getInetAddress(), client.getPort());
+					sendPacket(Packet.createForceDisconnectPacket(clientId, reason), client);
 				} catch (CouldNotSendPacketException e) {
 					//no need to report that we couldn't ask the client to disconnect--we're dropping the client regardless
 				}
-				clients.remove(client);
+				clients.remove(clientId);
 				clientDropped = true;
 			}
 		}
 		if(clientDropped && listener != null)
-			listener.onClientDisconnected(clientId);
+			listener.onClientDisconnected(clientId, Server.DROPPED_BY_SERVER);
 	}
 
 	public int send(int clientId, String message) throws CouldNotSendPacketException {
 		synchronized(CONNECTION_LOCK) {
+			Packet packet = Packet.createApplicationPacket(clientId, message);
+
 			//if the client isn't connected then throw an exception
 			if(!clients.containsKey(clientId))
-				return -1; //TODO throw ClientNotConnectedException
+				throw new ClientNotConnectedException(clientId, packet);
 
 			logger.fine("Sending message to client " + clientId + ": " + message);
 			ServerClientConnection client = clients.get(clientId);
-			return sendPacket(Packet.createApplicationPacket(clientId, message), client.getInetAddress(), client.getPort());
+			return sendPacket(packet, client);
 		}
 	}
 
 	public int resend(int clientId, int originalMessageId, String message) throws CouldNotSendPacketException {
 		synchronized(CONNECTION_LOCK) {
+			Packet packet = Packet.createApplicationPacket(clientId, message);
+			packet.setDuplicateSequenceNumber(originalMessageId);
+
 			//if the client isn't connected then throw an exception
 			if(!clients.containsKey(clientId))
-				return -1; //TODO throw ClientNotConnectedException
+				throw new ClientNotConnectedException(clientId, packet);
 
 			logger.fine("Sending message to client " + clientId + ": " + message);
 			ServerClientConnection client = clients.get(clientId);
-			Packet packet = Packet.createApplicationPacket(clientId, message);
-			packet.setDuplicateSequenceNumber(originalMessageId);
-			return sendPacket(packet, client.getInetAddress(), client.getPort());
+			return sendPacket(packet, client);
 		}
 	}
 
@@ -197,7 +201,7 @@ public class Server implements PacketReceiver {
 							break;
 						case PING:
 							try {
-								sendPacket(Packet.createPingResponsePacket(clientId), client.getInetAddress(), client.getPort());
+								sendPacket(Packet.createPingResponsePacket(clientId), client);
 							} catch (CouldNotSendPacketException e) {
 								//ignore all exceptions--we don't need to report that we had trouble responding to a ping
 							}
@@ -209,7 +213,7 @@ public class Server implements PacketReceiver {
 							break;
 						case CLIENT_DISCONNECT:
 							logger.fine("Client " + clientId + " disconnected");
-							removeClient(client);
+							clients.remove(client.getClientId());
 							listenerAction = 3; //onClientDisconnected
 							break;
 						default:
@@ -236,7 +240,7 @@ public class Server implements PacketReceiver {
 					listener.onReceive(packet.getConnectionId(), packet.getMessage());
 					break;
 				case 3: //onClientDisconnected
-					listener.onClientDisconnected(packet.getConnectionId());
+					listener.onClientDisconnected(packet.getConnectionId(), Server.DISCONNECT_BY_CLIENT);
 					break;
 			}
 		}
@@ -267,7 +271,7 @@ public class Server implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			try {
 				ServerClientConnection client = new ServerClientConnection(clientId, address, port, InetAddress.getByName(address));
-				sendPacket(Packet.createConnectionAcceptedPacket(clientId), client.getInetAddress(), client.getPort());
+				sendPacket(Packet.createConnectionAcceptedPacket(clientId), client);
 				clientAccepted = true;
 				clients.put(clientId, client);
 				logger.fine("Client " + clientId + " connected");
@@ -280,14 +284,14 @@ public class Server implements PacketReceiver {
 			}
 		}
 		if(!clientAccepted && listener != null)
-			listener.onClientDisconnected(clientId);
+			listener.onClientDisconnected(clientId, Server.CLIENT_COULD_NOT_CONNECT);
 	}
 
 	private void rejectClient(int clientId, String address, int port) {
 		logger.fine("Client " + clientId + " was refused");
 		synchronized(CONNECTION_LOCK) {
 			try {
-				sendPacket(Packet.createConnectionRefusedPacket(), InetAddress.getByName(address), port);
+				sendPacket(Packet.createConnectionRefusedPacket(), new ServerClientConnection(clientId, address, port, InetAddress.getByName(address)));
 			} catch (UnknownHostException e) {
 				//ignore exceptions--we don't need to report that we had trouble rejecting a connection
 			} catch (CouldNotSendPacketException e) {
@@ -299,14 +303,53 @@ public class Server implements PacketReceiver {
 	private void handlePingResponse(ServerClientConnection client, Packet pingResponse) {
 		//TODO implement
 	}
+	private int sendPacket(Packet packet, ServerClientConnection client) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
+		int sequenceNumber = -1;
+		synchronized(CONNECTION_LOCK) {
+			//regardless of whether the packet is valid, if the client is not connected then throw a NotConnectedException
+			if(!isRunning) {
+				logger.finest("Outgoing packet: could not send because server is not running");
+				throw new ServerNotStartedException(packet);
+			}
 
-	private void removeClient(ServerClientConnection client) {
-		//TODO implement
-	}
+			//there's no point in sending null packets, so throw a NullPacketException
+			if(packet == null) {
+				logger.finest("Outgoing packet: could not send because packet is null");
+				throw new NullPacketException();
+			}
 
-	private int sendPacket(Packet packet, InetAddress inetAddress, int port) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
-		//TODO implement
-		return -1;
+			synchronized(client.getPacketRecorder()) {
+				//add the sequenceNumber, lastReceivedSequenceNumber, and receivedPacketHistory to the packet which we've been
+				// recording with our PacketRecorder--also simultaneously record this packet as getting sent
+				client.getPacketRecorder().recordAndAddSequenceNumberToOutgoingPacket(packet);
+				client.getPacketRecorder().addReceivedPacketHistoryToOutgoingPacket(packet);
+				sequenceNumber = packet.getSequenceNumber();
+
+				try {
+					//attempt to send the packet
+					byte[] bytes = packet.toByteArray();
+					DatagramPacket datagramPacket = new DatagramPacket(bytes, bytes.length, client.getInetAddress(), client.getPort());
+					socket.send(datagramPacket);
+					if(logger.isLoggable(Level.FINEST))
+						logger.finest("Outgoing packet:\n  " + packet.toString().replaceAll("\n", "\n  "));
+				} catch (PacketEncodingException e) {
+					//encoding issues result when the packet contains connection id or sequence numbers that are out of range.
+					// we would not expect these to occur if everything is functioning as normal
+					client.getPacketRecorder().recordPreviousOutgoingPacketNotSent();
+					logger.finest("Outgoing packet: could not send due to PacketEncodingException \"" + e.getMessage() + "\"");
+					throw new CouldNotEncodePacketException(e, packet);
+				}
+				catch (IOException e) {
+					//wrapping any IOException the socket might throw so calling send() only throws CouldNotSendPacketExceptions
+					client.getPacketRecorder().recordPreviousOutgoingPacketNotSent();
+					logger.finest("Outgoing packet: could not send due to IOException \"" + e.getMessage() + "\"");
+					throw new PacketIOException(e, packet);
+				}
+			}
+		}
+
+		//return the sequence number of the packet that we sent
+		return sequenceNumber;
 	}
 
 	private void resetTimeout(ServerClientConnection client) {
@@ -359,6 +402,14 @@ public class Server implements PacketReceiver {
 
 		public ServerNotStartedException(Packet packet) {
 			super("Server is not started.", packet);
+		}
+	}
+
+	public static class ClientNotConnectedException extends CouldNotSendPacketException {
+		private static final long serialVersionUID = -4168333419680498496L;
+
+		public ClientNotConnectedException(int clientId, Packet packet) {
+			super("Client " + clientId + " is not connected.", packet);
 		}
 	}
 }

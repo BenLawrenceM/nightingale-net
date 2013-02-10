@@ -17,7 +17,7 @@ public class ServerClientConnection {
 		recorder = new PacketRecorder();
 	}
 
-	public int getConnectionId() {
+	public int getClientId() {
 		return connectionId;
 	}
 
