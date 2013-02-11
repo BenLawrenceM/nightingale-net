@@ -15,9 +15,10 @@ import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
-public class ClientConnection implements PacketReceiver {
+public class ClientConnection implements PacketReceiver, Pinger {
 	private static final Logger logger = Logger.getLogger(ClientConnection.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
+	private static final int TIME_BETWEEN_PINGS = 1000;
 	private static final int CONNECT_REQUEST_TIMEOUT = 3000;
 	private static final int RECEIVE_PACKET_TIMEOUT = 3000;
 	private static final String CONNECT_REQUEST_REFUSED = "Connection refused by server.";
@@ -33,12 +34,9 @@ public class ClientConnection implements PacketReceiver {
 	private boolean isAttemptingToConnect;
 	private int clientId;
 	private PacketRecorder recorder;
+	private PingThread pingThread;
 	private TimeoutThread timeoutThread;
 	private ReceivePacketThread receivePacketThread;
-
-	public ClientConnection() {
-		this(null);
-	}
 
 	public ClientConnection(ClientConnectionListener listener) {
 		this.listener = listener;
@@ -250,6 +248,20 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
+	public void ping() {
+		synchronized(CONNECTION_LOCK) {
+			if(isConnected) {
+				try {
+					sendPacket(Packet.createPingPacket(clientId));
+					logger.finest("Pinging server");
+				} catch (CouldNotSendPacketException e) {
+					//ignore all exceptions--who cares if we had trouble sending a ping?
+					logger.finest("Could not ping server: " + e.getMessage());
+				}
+			}
+		}
+	}
+
 	private void acceptConnection(Packet packet) {
 		synchronized(CONNECTION_LOCK) {
 			//the packet contains the client id we'll use for all future communications with the server
@@ -260,6 +272,8 @@ public class ClientConnection implements PacketReceiver {
 			timeoutThread.stopTimeout();
 			timeoutThread = new TimeoutThread(this, ClientConnection.RECEIVE_PACKET_TIMEOUT);
 			timeoutThread.start();
+			pingThread = new PingThread(this, ClientConnection.TIME_BETWEEN_PINGS);
+			pingThread.start();
 		}
 	}
 
@@ -316,6 +330,8 @@ public class ClientConnection implements PacketReceiver {
 				receivePacketThread.stopReceiving();
 			if(timeoutThread != null)
 				timeoutThread.stopTimeout();
+			if(pingThread != null)
+				pingThread.stopPinging();
 			if(socket != null)
 				socket.close();
 			resetVariables();
@@ -331,6 +347,7 @@ public class ClientConnection implements PacketReceiver {
 			isConnected = false;
 			isAttemptingToConnect = false;
 			clientId = Packet.ANONYMOUS_CONNECTION_ID;
+			pingThread = null;
 			timeoutThread = null;
 			receivePacketThread = null;
 			recorder.reset();

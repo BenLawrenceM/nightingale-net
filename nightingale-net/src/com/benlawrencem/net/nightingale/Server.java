@@ -21,10 +21,11 @@ import com.benlawrencem.net.nightingale.Packet.NullPacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 
-public class Server implements PacketReceiver {
+public class Server implements PacketReceiver, Pinger {
 	private static final Logger logger = Logger.getLogger(Server.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
 	private static final int CLIENT_TIMEOUT = 3000;
+	private static final int TIME_BETWEEN_PINGS = 3000;
 	private static final String SERVER_STOPPING = "Server stopping.";
 	private static final String DISCONNECT_BY_CLIENT = "Disconnect requested by client.";
 	private static final String DROPPED_BY_SERVER = "Client cropped by server.";
@@ -33,6 +34,7 @@ public class Server implements PacketReceiver {
 	private ServerListener listener;
 	private DatagramSocket socket;
 	private boolean isRunning;
+	private PingThread pingThread;
 	private ServerTimeoutThread timeoutThread;
 	private ReceivePacketThread receivePacketThread;
 	private Map<Integer, ServerClientConnection> clients;
@@ -56,6 +58,8 @@ public class Server implements PacketReceiver {
 				receivePacketThread.start();
 				timeoutThread = new ServerTimeoutThread(this, Server.CLIENT_TIMEOUT);
 				timeoutThread.start();
+				pingThread = new PingThread(this, Server.TIME_BETWEEN_PINGS);
+				pingThread.start();
 				isRunning = true;
 				logger.fine("Server is open and receiving connections!");
 			} catch (SocketException e) {
@@ -274,6 +278,22 @@ public class Server implements PacketReceiver {
 		}
 	}
 
+	public void ping() {
+		synchronized(CONNECTION_LOCK) {
+			if(isRunning) {
+				for(int clientId : clients.keySet()) {
+					try {
+						sendPacket(Packet.createPingPacket(clientId), clients.get(clientId));
+						logger.finest("Pinging client " + clientId);
+					} catch (CouldNotSendPacketException e) {
+						//ignore all exceptions--who cares if we had trouble sending a ping?
+						logger.finest("Could not ping client " + clientId + ": " + e.getMessage());
+					}
+				}
+			}
+		}
+	}
+
 	private void closeConnection() {
 		logger.finer("Closing server connection");
 		synchronized(CONNECTION_LOCK) {
@@ -281,6 +301,8 @@ public class Server implements PacketReceiver {
 				receivePacketThread.stopReceiving();
 			if(timeoutThread != null)
 				timeoutThread.stopCheckingForTimeouts();
+			if(pingThread != null)
+				pingThread.stopPinging();
 			if(socket != null)
 				socket.close();
 			resetParameters();
@@ -291,6 +313,7 @@ public class Server implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			socket = null;
 			isRunning = false;
+			pingThread = null;
 			timeoutThread = null;
 			receivePacketThread = null;
 			clients = new HashMap<Integer, ServerClientConnection>();
