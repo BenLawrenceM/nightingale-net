@@ -7,7 +7,10 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,13 +24,16 @@ import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 public class Server implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(Server.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
+	private static final int CLIENT_TIMEOUT = 3000;
 	private static final String SERVER_STOPPING = "Server stopping.";
 	private static final String DISCONNECT_BY_CLIENT = "Disconnect requested by client.";
 	private static final String DROPPED_BY_SERVER = "Client cropped by server.";
 	private static final String CLIENT_COULD_NOT_CONNECT = "Could not accept client connection.";
+	private static final String CLIENT_TIMED_OUT = "Client timed out.";
 	private ServerListener listener;
 	private DatagramSocket socket;
 	private boolean isRunning;
+	private ServerTimeoutThread timeoutThread;
 	private ReceivePacketThread receivePacketThread;
 	private Map<Integer, ServerClientConnection> clients;
 	private int lastConnectedClientId;
@@ -48,6 +54,8 @@ public class Server implements PacketReceiver {
 				socket = new DatagramSocket(port);
 				receivePacketThread = new ReceivePacketThread(this, socket);
 				receivePacketThread.start();
+				timeoutThread = new ServerTimeoutThread(this, Server.CLIENT_TIMEOUT);
+				timeoutThread.start();
 				isRunning = true;
 				logger.fine("Server is open and receiving connections!");
 			} catch (SocketException e) {
@@ -214,7 +222,7 @@ public class Server implements PacketReceiver {
 						case APPLICATION:
 							logger.fine("Receiving message from client " + clientId +": " + packet.getMessage());
 							listenerAction = 2; //onReceive
-							resetTimeout(client);
+							client.resetTimeout();
 							break;
 						case PING:
 							try {
@@ -222,11 +230,11 @@ public class Server implements PacketReceiver {
 							} catch (CouldNotSendPacketException e) {
 								//ignore all exceptions--we don't need to report that we had trouble responding to a ping
 							}
-							resetTimeout(client);
+							client.resetTimeout();
 							break;
 						case PING_RESPONSE:
 							handlePingResponse(client, packet);
-							resetTimeout(client);
+							client.resetTimeout();
 							break;
 						case CLIENT_DISCONNECT:
 							logger.fine("Client " + clientId + " disconnected");
@@ -271,6 +279,8 @@ public class Server implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			if(receivePacketThread != null)
 				receivePacketThread.stopReceiving();
+			if(timeoutThread != null)
+				timeoutThread.stopCheckingForTimeouts();
 			if(socket != null)
 				socket.close();
 			resetParameters();
@@ -281,6 +291,7 @@ public class Server implements PacketReceiver {
 		synchronized(CONNECTION_LOCK) {
 			socket = null;
 			isRunning = false;
+			timeoutThread = null;
 			receivePacketThread = null;
 			clients = new HashMap<Integer, ServerClientConnection>();
 			lastConnectedClientId = Packet.ANONYMOUS_CONNECTION_ID;
@@ -373,10 +384,6 @@ public class Server implements PacketReceiver {
 		return sequenceNumber;
 	}
 
-	private void resetTimeout(ServerClientConnection client) {
-		//TODO implement
-	}
-
 	private int getNextClientId() {
 		logger.finest("Getting next client id...");
 		synchronized(CONNECTION_LOCK) {
@@ -390,6 +397,47 @@ public class Server implements PacketReceiver {
 			logger.finest("Next client id is " + lastConnectedClientId);
 			return lastConnectedClientId;
 		}
+	}
+
+	private long checkClientTimeouts(int timeout) {
+		//we may need to notify the listener of disconnected clients
+		Set<Integer> disconnectedClientIds = new HashSet<Integer>();
+		long oldestClientCommunicationTime = -1;
+
+		synchronized(CONNECTION_LOCK) {
+			//if the server isn't running just return a sentinel value
+			if(!isRunning)
+				return -1;
+
+			//check to see if any client has timed out
+			long now = System.currentTimeMillis();
+			oldestClientCommunicationTime = now; //now is a good default value as it will make the timeout thread wait the full timeout if no clients are connected
+			for(Iterator<Integer> iter = clients.keySet().iterator(); iter.hasNext();) {
+				int clientId = iter.next();
+				ServerClientConnection client = clients.get(clientId);
+
+				//if the client has timed out then remove it from the list of clients
+				if(client.getTimeOfLastCommunication() + timeout <= now) {
+					iter.remove(); //removing client ids from the key set DOES remove clients from the map
+					disconnectedClientIds.add(clientId); 
+				}
+
+				//otherwise this client may be the client closest to timing out
+				else if(client.getTimeOfLastCommunication() < oldestClientCommunicationTime)
+					oldestClientCommunicationTime = client.getTimeOfLastCommunication();
+			}
+		}
+
+		//inform the listener of any clients that timed out
+		if(listener != null) {
+			for(int clientId : disconnectedClientIds) {
+				logger.fine("Client " + clientId + " timed out");
+				listener.onClientDisconnected(clientId, Server.CLIENT_TIMED_OUT);
+			}
+		}
+
+		//return the time of last communication of the client who is closest to timing out
+		return oldestClientCommunicationTime;
 	}
 
 	public static abstract class CouldNotStartServerException extends Exception {
@@ -435,6 +483,37 @@ public class Server implements PacketReceiver {
 
 		public ClientNotConnectedException(int clientId, Packet packet) {
 			super("Client " + clientId + " is not connected.", packet);
+		}
+	}
+
+	private static class ServerTimeoutThread extends Thread {
+		private Server server;
+		private int timeout;
+		private boolean isCheckingForTimeouts;
+
+		public ServerTimeoutThread(Server server, int timeoutInMilliseconds) {
+			super();
+			this.server = server;
+			timeout = timeoutInMilliseconds;
+			isCheckingForTimeouts = false;
+		}
+
+		public void run() {
+			isCheckingForTimeouts = true;
+			while(isCheckingForTimeouts) {
+				//tell the server to check for clients that have timed out
+				long oldestCommunication = server.checkClientTimeouts(timeout);
+
+				//sleep until the next client is expected to time out
+				long now = System.currentTimeMillis();
+				try {
+					Thread.sleep(Math.max(50, timeout - now + oldestCommunication));
+				} catch (InterruptedException e) {}
+			}
+		}
+
+		public void stopCheckingForTimeouts() {
+			isCheckingForTimeouts = false;
 		}
 	}
 }

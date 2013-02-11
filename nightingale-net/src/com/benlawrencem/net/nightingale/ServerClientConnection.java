@@ -8,6 +8,7 @@ public class ServerClientConnection {
 	private int clientPort;
 	private InetAddress clientInetAddress;
 	private PacketRecorder recorder;
+	private long timeOfLastCommunication;
 
 	public ServerClientConnection(int connectionId, String address, int port, InetAddress inetAddress) {
 		this.connectionId = connectionId;
@@ -15,6 +16,7 @@ public class ServerClientConnection {
 		clientPort = port;
 		clientInetAddress = inetAddress;
 		recorder = new PacketRecorder();
+		timeOfLastCommunication = System.currentTimeMillis();
 	}
 
 	public int getClientId() {
@@ -41,5 +43,13 @@ public class ServerClientConnection {
 		if(address == null)
 			return (clientAddress == null && port == clientPort);
 		return (address.equals(clientAddress) && port == clientPort);
+	}
+
+	public long getTimeOfLastCommunication() {
+		return timeOfLastCommunication;
+	}
+
+	public void resetTimeout() {
+		timeOfLastCommunication = System.currentTimeMillis();
 	}
 }
