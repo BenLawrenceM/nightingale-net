@@ -9,6 +9,7 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
@@ -171,6 +172,7 @@ public class Server implements PacketReceiver, Pinger {
 
 		//ugly, but I don't want the listener callbacks to be in a synchronized block
 		int listenerAction = -1;
+		List<Packet> undeliveredPackets = null;
 
 		synchronized(CONNECTION_LOCK) {
 			//ignore all packets if the server isn't running
@@ -205,49 +207,53 @@ public class Server implements PacketReceiver, Pinger {
 				}
 
 				synchronized(client.getPacketRecorder()) {
+
 					//ignore packets we've received from the client before
 					if(client.getPacketRecorder().hasRecordedIncomingPacket(packet)) {
 						logger.finer("Ignoring packet that has already been received from client " + clientId + " before");
-						return;
+						undeliveredPackets = client.getPacketRecorder().getUndeliveredPackets();
 					}
 
 					//ignore duplicates of packets we've received from the client before
-					if(packet.isDuplicate() && client.getPacketRecorder().hasRecordedDuplicateOfIncomingPacket(packet)) {
+					else if(packet.isDuplicate() && client.getPacketRecorder().hasRecordedDuplicateOfIncomingPacket(packet)) {
 						logger.finer("Ignoring duplicate of packet that has already been received from client " + clientId + " before");
 						client.getPacketRecorder().recordIncomingPacket(packet); //we still want to record having received it (must be run AFTER hasRecordedDuplicateOfIncomingPacket)
-						return;
+						undeliveredPackets = client.getPacketRecorder().getUndeliveredPackets();
 					}
 
-					//record the packet as having been received
-					client.getPacketRecorder().recordIncomingPacket(packet);
-
-					//we expect application messages, pings, and disconnect notifications from the client
-					switch(packet.getMessageType()) {
-						case APPLICATION:
-							logger.fine("Receiving message from client " + clientId +": " + packet.getMessage());
-							listenerAction = 2; //onReceive
-							client.resetTimeout();
-							break;
-						case PING:
-							try {
-								sendPacket(Packet.createPingResponsePacket(clientId), client);
-							} catch (CouldNotSendPacketException e) {
-								//ignore all exceptions--we don't need to report that we had trouble responding to a ping
-							}
-							client.resetTimeout();
-							break;
-						case PING_RESPONSE:
-							handlePingResponse(client, packet);
-							client.resetTimeout();
-							break;
-						case CLIENT_DISCONNECT:
-							logger.fine("Client " + clientId + " disconnected");
-							clients.remove(client.getClientId());
-							listenerAction = 3; //onClientDisconnected
-							break;
-						default:
-							logger.finer("Ignoring " + packet.getMessageType() + " packet from client " + clientId + " because only APPLICATION, PING, PING_RESPONSE and CLIENT_DISCONNECT packets are expected");
-							return;
+					else {
+						//record the packet as having been received
+						client.getPacketRecorder().recordIncomingPacket(packet);
+						undeliveredPackets = client.getPacketRecorder().getUndeliveredPackets();
+	
+						//we expect application messages, pings, and disconnect notifications from the client
+						switch(packet.getMessageType()) {
+							case APPLICATION:
+								logger.fine("Receiving message from client " + clientId +": " + packet.getMessage());
+								listenerAction = 2; //onReceive
+								client.resetTimeout();
+								break;
+							case PING:
+								try {
+									sendPacket(Packet.createPingResponsePacket(clientId), client);
+								} catch (CouldNotSendPacketException e) {
+									//ignore all exceptions--we don't need to report that we had trouble responding to a ping
+								}
+								client.resetTimeout();
+								break;
+							case PING_RESPONSE:
+								handlePingResponse(client, packet);
+								client.resetTimeout();
+								break;
+							case CLIENT_DISCONNECT:
+								logger.fine("Client " + clientId + " disconnected");
+								clients.remove(client.getClientId());
+								listenerAction = 3; //onClientDisconnected
+								break;
+							default:
+								logger.finer("Ignoring " + packet.getMessageType() + " packet from client " + clientId + " because only APPLICATION, PING, PING_RESPONSE and CLIENT_DISCONNECT packets are expected");
+								return;
+						}
 					}
 				}
 			}
@@ -274,6 +280,19 @@ public class Server implements PacketReceiver, Pinger {
 				case 3: //onClientDisconnected
 					listener.onClientDisconnected(packet.getConnectionId(), Server.DISCONNECT_BY_CLIENT);
 					break;
+			}
+
+			//inform the listener of any undelivered application messages
+			if(undeliveredPackets != null) {
+				for(Packet undeliveredPacket : undeliveredPackets) {
+					if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
+						listener.onMessageNotDelivered(
+								undeliveredPacket.getSequenceNumber(),
+								(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
+								undeliveredPacket.getConnectionId(),
+								undeliveredPacket.getMessage());
+					}
+				}
 			}
 		}
 	}

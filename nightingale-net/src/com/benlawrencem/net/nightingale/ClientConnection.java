@@ -6,10 +6,12 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
+import com.benlawrencem.net.nightingale.Packet.MessageType;
 import com.benlawrencem.net.nightingale.Packet.NullPacketException;
 import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
@@ -145,6 +147,7 @@ public class ClientConnection implements PacketReceiver, Pinger {
 
 		//ugly, but I don't want the listener callbacks to be in a synchronized block
 		int listenerAction = -1;
+		List<Packet> undeliveredPackets = null;
 		String disconnectReason = null;
 
 		synchronized(CONNECTION_LOCK) {
@@ -164,66 +167,69 @@ public class ClientConnection implements PacketReceiver, Pinger {
 				//ignore packets we've received before
 				if(recorder.hasRecordedIncomingPacket(packet)) {
 					logger.finer("Ignoring packet that has already been received before");
-					return;
+					undeliveredPackets = recorder.getUndeliveredPackets();
 				}
 
 				//ignore duplicates of packets we've received before
-				if(packet.isDuplicate() && recorder.hasRecordedDuplicateOfIncomingPacket(packet)) {
+				else if(packet.isDuplicate() && recorder.hasRecordedDuplicateOfIncomingPacket(packet)) {
 					logger.finer("Ignoring duplicate of packet that has already been received before");
 					recorder.recordIncomingPacket(packet); //we still want to record having received it (must be run AFTER hasRecordedDuplicateOfIncomingPacket)
-					return;
+					undeliveredPackets = recorder.getUndeliveredPackets();
 				}
 
-				//record the packet as having been received
-				recorder.recordIncomingPacket(packet);
-
-				//when attempting to connect we expect to receive either a connection refused or connection accepted packet
-				if(isAttemptingToConnect) {
-					switch(packet.getMessageType()) {
-						case CONNECTION_ACCEPTED:
-							acceptConnection(packet);
-							listenerAction = 1; //onConnected
-							break;
-						case CONNECTION_REFUSED:
-							logger.fine("Connection refused");
-							closeConnection();
-							listenerAction = 2; //onCouldNotConnect
-							break;
-						default:
-							logger.finer("Ignoring " + packet.getMessageType() + " packet because only CONNECTION_ACCEPTED and CONNECTION_REFUSED packets are expected");
-							return;
+				else {
+					//record the packet as having been received
+					recorder.recordIncomingPacket(packet);
+					undeliveredPackets = recorder.getUndeliveredPackets();
+	
+					//when attempting to connect we expect to receive either a connection refused or connection accepted packet
+					if(isAttemptingToConnect) {
+						switch(packet.getMessageType()) {
+							case CONNECTION_ACCEPTED:
+								acceptConnection(packet);
+								listenerAction = 1; //onConnected
+								break;
+							case CONNECTION_REFUSED:
+								logger.fine("Connection refused");
+								closeConnection();
+								listenerAction = 2; //onCouldNotConnect
+								break;
+							default:
+								logger.finer("Ignoring " + packet.getMessageType() + " packet because only CONNECTION_ACCEPTED and CONNECTION_REFUSED packets are expected");
+								return;
+						}
 					}
-				}
-
-				//when already connected we expect application messages, pings, and disconnect notifications
-				else if(isConnected) {
-					switch(packet.getMessageType()) {
-						case APPLICATION:
-							logger.fine("Receiving message: " + packet.getMessage());
-							listenerAction = 3; //onReceive
-							timeoutThread.resetTimeout();
-							break;
-						case PING:
-							try {
-								sendPacket(Packet.createPingResponsePacket(clientId));
-							} catch (CouldNotSendPacketException e) {
-								//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
-							}
-							timeoutThread.resetTimeout();
-							break;
-						case PING_RESPONSE:
-							handlePingResponse(packet);
-							timeoutThread.resetTimeout();
-							break;
-						case FORCE_DISCONNECT:
-							logger.fine("Disconnected by server: " + packet.getMessage());
-							closeConnection();
-							disconnectReason = packet.getMessage();
-							listenerAction = 4; //onDisconnected
-							break;
-						default:
-							logger.finer("Ignoring " + packet.getMessageType() + " packet because only APPLICATION, PING, PING_RESPONSE and FORCE_DISCONNECT packets are expected");
-							return;
+	
+					//when already connected we expect application messages, pings, and disconnect notifications
+					else if(isConnected) {
+						switch(packet.getMessageType()) {
+							case APPLICATION:
+								logger.fine("Receiving message: " + packet.getMessage());
+								listenerAction = 3; //onReceive
+								timeoutThread.resetTimeout();
+								break;
+							case PING:
+								try {
+									sendPacket(Packet.createPingResponsePacket(clientId));
+								} catch (CouldNotSendPacketException e) {
+									//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
+								}
+								timeoutThread.resetTimeout();
+								break;
+							case PING_RESPONSE:
+								handlePingResponse(packet);
+								timeoutThread.resetTimeout();
+								break;
+							case FORCE_DISCONNECT:
+								logger.fine("Disconnected by server: " + packet.getMessage());
+								closeConnection();
+								disconnectReason = packet.getMessage();
+								listenerAction = 4; //onDisconnected
+								break;
+							default:
+								logger.finer("Ignoring " + packet.getMessageType() + " packet because only APPLICATION, PING, PING_RESPONSE and FORCE_DISCONNECT packets are expected");
+								return;
+						}
 					}
 				}
 			}
@@ -244,6 +250,18 @@ public class ClientConnection implements PacketReceiver, Pinger {
 				case 4: //onDisconnected
 					listener.onDisconnected(disconnectReason);
 					break;
+			}
+
+			//inform the listener of any undelivered application messages
+			if(undeliveredPackets != null) {
+				for(Packet undeliveredPacket : undeliveredPackets) {
+					if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
+						listener.onMessageNotDelivered(
+								undeliveredPacket.getSequenceNumber(),
+								(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
+								undeliveredPacket.getMessage());
+					}
+				}
 			}
 		}
 	}

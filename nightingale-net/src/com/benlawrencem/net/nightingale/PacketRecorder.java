@@ -1,5 +1,8 @@
 package com.benlawrencem.net.nightingale;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class PacketRecorder {
 	private static final int NUM_RECEIVED_PACKETS_STORED = 64;
 	private Packet[] receivedPackets;
@@ -11,6 +14,8 @@ public class PacketRecorder {
 	private Packet[] sentPackets;
 	private int lastSentPacketIndex;
 	private int lastSentPacketSequenceNumber;
+
+	private int lastSentPacketCheckedForDelivery;
 
 	public PacketRecorder() {
 		receivedPackets = new Packet[PacketRecorder.NUM_RECEIVED_PACKETS_STORED];
@@ -87,6 +92,56 @@ public class PacketRecorder {
 		}
 	}
 
+	public synchronized List<Packet> getUndeliveredPackets() {
+		List<Packet> undeliveredPackets = new ArrayList<Packet>();
+
+		//if we've never received a packet then we have no way to tell if the packets we've sent have been delivered
+		if(lastReceivedPacketSequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
+			return undeliveredPackets;
+
+		//if we received null packets (shouldn't be possible) then once again there's no way to tell which packets have been delivered
+		Packet packet = receivedPackets[lastReceivedPacketIndex];
+		if(packet == null)
+			return undeliveredPackets;
+
+		//if the last received packet doesn't have history information then there's no information on which packets were delivered
+		if(!packet.hasReceivedPacketHistory())
+			return undeliveredPackets;
+
+		//if the the last received packet has older history information than when we last checked then we gain no new information
+		int packetVerifiedAsDelivered = packet.getLastReceivedSequenceNumber();
+		if(lastSentPacketCheckedForDelivery != Packet.SEQUENCE_NUMBER_NOT_APPLICABLE
+				&& Packet.deltaBetweenSequenceNumbers(lastSentPacketCheckedForDelivery, packetVerifiedAsDelivered) <= 0)
+			return undeliveredPackets;
+
+		//if we've never checked packet history before then we set an anchor here and don't do any checking yet
+		if(lastSentPacketCheckedForDelivery == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE) {
+			lastSentPacketCheckedForDelivery = packetVerifiedAsDelivered;
+			return undeliveredPackets;
+		}
+
+		//check each packet between the last packet checked for delivery and the new packet verified as delivered
+		lastSentPacketCheckedForDelivery = Packet.nextSequenceNumber(lastSentPacketCheckedForDelivery);
+		while(lastSentPacketCheckedForDelivery != packetVerifiedAsDelivered) {
+			int delta = Packet.deltaBetweenSequenceNumbers(lastSentPacketCheckedForDelivery, packetVerifiedAsDelivered);
+			if(delta <= 32) {
+				//if the most recent packet has 0s in it that means packet weren't delivered
+				//ex: delta = 32 --> rightmost bit represents delivery --> mask with 2^0
+				//ex: delta = 1  --> leftmost bit represents delivery  --> mask with 2^31 --> mask with Integer.MIN_VALUE
+				int mask = (delta == 1 ? Integer.MIN_VALUE : (int) Math.pow(2, 32 - delta));
+				if((packet.getReceivedPacketHistory() & mask) == 0) {
+					int index = lastSentPacketIndex - delta;
+					if(index < 0)
+						index += PacketRecorder.NUM_SENT_PACKETS_STORED;
+					if(sentPackets[index] != null)
+						undeliveredPackets.add(sentPackets[index]);
+				}
+			}
+			lastSentPacketCheckedForDelivery = Packet.nextSequenceNumber(lastSentPacketCheckedForDelivery);
+		}
+		return undeliveredPackets;
+	}
+	
 	public synchronized void addReceivedPacketHistoryToOutgoingPacket(Packet packet) {
 		if(packet != null) {
 			packet.setLastReceivedSequenceNumber(lastReceivedPacketSequenceNumber);
@@ -111,9 +166,8 @@ public class PacketRecorder {
 	}
 
 	public synchronized void recordPreviousOutgoingPacketNotSent() {
-		//TODO implement
+		//no-op--the receiving party will recognize the packet has not been received and request a duplicate
 	}
-
 
 	public synchronized Packet getSentPacketWithSequenceNumber(int sequenceNumber) {
 		//ignore N/A sequence numbers
@@ -147,6 +201,8 @@ public class PacketRecorder {
 			sentPackets[i] = null;
 		lastSentPacketIndex = -1;
 		lastSentPacketSequenceNumber = Packet.SEQUENCE_NUMBER_NOT_APPLICABLE;
+
+		lastSentPacketCheckedForDelivery = Packet.SEQUENCE_NUMBER_NOT_APPLICABLE;
 	}
 
 	private synchronized boolean hasReceivedPacketWithSequenceNumber(int sequenceNumber) {
