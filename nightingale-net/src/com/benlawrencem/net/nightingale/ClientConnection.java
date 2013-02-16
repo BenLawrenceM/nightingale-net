@@ -17,7 +17,7 @@ import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
-public class ClientConnection implements PacketReceiver, Pinger {
+public class ClientConnection implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(ClientConnection.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
 	private static final int TIME_BETWEEN_PINGS = 1000;
@@ -525,6 +525,32 @@ public class ClientConnection implements PacketReceiver, Pinger {
 
 		public void stopTimeout() {
 			isWaitingToTimeOut = false;
+		}
+	}
+
+	public class PingThread extends Thread {
+		private ClientConnection client;
+		private int timeout;
+		private boolean isPinging;
+
+		public PingThread(ClientConnection client, int millisecondsBetweenPings) {
+			this.client = client;
+			timeout = millisecondsBetweenPings;
+			isPinging = false;
+		}
+
+		public void run() {
+			isPinging = true;
+			while(isPinging) {
+				client.ping();
+				try {
+					Thread.sleep(timeout);
+				} catch (InterruptedException e) {}
+			}
+		}
+
+		public void stopPinging() {
+			isPinging = false;
 		}
 	}
 }
