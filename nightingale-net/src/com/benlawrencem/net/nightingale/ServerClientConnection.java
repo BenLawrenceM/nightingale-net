@@ -9,6 +9,7 @@ public class ServerClientConnection {
 	private InetAddress clientInetAddress;
 	private PacketRecorder recorder;
 	private long timeOfLastCommunication;
+	private long latency;
 
 	public ServerClientConnection(int connectionId, String address, int port, InetAddress inetAddress) {
 		this.connectionId = connectionId;
@@ -17,6 +18,7 @@ public class ServerClientConnection {
 		clientInetAddress = inetAddress;
 		recorder = new PacketRecorder();
 		timeOfLastCommunication = System.currentTimeMillis();
+		latency = -1;
 	}
 
 	public int getClientId() {
@@ -51,5 +53,13 @@ public class ServerClientConnection {
 
 	public void resetTimeout() {
 		timeOfLastCommunication = System.currentTimeMillis();
+	}
+
+	public long getLatency() {
+		return latency;
+	}
+
+	public void setLatency(long latency) {
+		this.latency = latency;
 	}
 }

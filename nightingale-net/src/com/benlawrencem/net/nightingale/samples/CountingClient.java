@@ -79,10 +79,10 @@ public class CountingClient implements ClientConnectionListener {
 	}
 
 	public void onReceive(String message) {
-		System.out.println("Received " + message);
+		System.out.println("Received " + message + (conn.getLatency() > -1 ? " [" + conn.getLatency() + "ms]" : ""));
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending  " + x);
+			System.out.println("Sending  " + x + (conn.getLatency() > -1 ? " [" + conn.getLatency() + "ms]" : ""));
 			try {
 				conn.send("" + x);
 			} catch (CouldNotSendPacketException e) {

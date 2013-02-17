@@ -317,26 +317,10 @@ public class Packet {
 		return connectionId + 1;
 	}
 
-	public static int previousConnectionId(int connectionId) {
-		if(connectionId == Packet.ANONYMOUS_CONNECTION_ID)
-			return Packet.ANONYMOUS_CONNECTION_ID;
-		if(connectionId == Packet.MINIMUM_CONNECTION_ID)
-			return Packet.MAXIMUM_CONNECTION_ID;
-		return connectionId - 1;
-	}
-
 	public static int nextSequenceNumber(int sequenceNumber) {
 		if(sequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE || sequenceNumber == Packet.MAXIMUM_SEQUENCE_NUMBER)
 			return Packet.MINIMUM_SEQUENCE_NUMBER;
 		return sequenceNumber + 1;
-	}
-
-	public static int previousSequenceNumber(int sequenceNumber) {
-		if(sequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
-			return Packet.SEQUENCE_NUMBER_NOT_APPLICABLE;
-		if(sequenceNumber == Packet.MINIMUM_SEQUENCE_NUMBER)
-			return Packet.MAXIMUM_SEQUENCE_NUMBER;
-		return sequenceNumber - 1;
 	}
 
 	public static int deltaBetweenSequenceNumbers(int earlierSequenceNumber, int laterSequenceNumber) {
@@ -384,8 +368,8 @@ public class Packet {
 		return new Packet(connectionId, MessageType.APPLICATION, message);
 	}
 
-	public static Packet createPingPacket(int connectionId) {
-		return new Packet(connectionId, MessageType.PING, null);
+	public static Packet createPingPacket(int connectionId, long latency) {
+		return new Packet(connectionId, MessageType.PING, "" + latency);
 	}
 
 	public static Packet createPingResponsePacket(int connectionId) {

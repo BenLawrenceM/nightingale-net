@@ -23,6 +23,7 @@ public class ClientConnection implements PacketReceiver {
 	private static final int TIME_BETWEEN_PINGS = 1000;
 	private static final int CONNECT_REQUEST_TIMEOUT = 3000;
 	private static final int RECEIVE_PACKET_TIMEOUT = 3000;
+	private static final int NUM_STORED_LATENCY_PACKETS = 5;
 	private static final String CONNECT_REQUEST_REFUSED = "Connection refused by server.";
 	private static final String CONNECT_REQUEST_TIMED_OUT = "Connect request timed out.";
 	private static final String CONNECTION_TIMED_OUT = "Connection timed out.";
@@ -39,6 +40,8 @@ public class ClientConnection implements PacketReceiver {
 	private PingThread pingThread;
 	private TimeoutThread timeoutThread;
 	private ReceivePacketThread receivePacketThread;
+	private int lastLatencyIndex;
+	private long[] latencyOfMostRecentPackets;
 
 	public ClientConnection(ClientConnectionListener listener) {
 		this.listener = listener;
@@ -208,14 +211,6 @@ public class ClientConnection implements PacketReceiver {
 								listenerAction = 3; //onReceive
 								timeoutThread.resetTimeout();
 								break;
-							case PING:
-								try {
-									sendPacket(Packet.createPingResponsePacket(clientId));
-								} catch (CouldNotSendPacketException e) {
-									//ignore all exceptions--the user doesn't need to know that we had trouble responding to a ping
-								}
-								timeoutThread.resetTimeout();
-								break;
 							case PING_RESPONSE:
 								handlePingResponse(packet);
 								timeoutThread.resetTimeout();
@@ -227,7 +222,7 @@ public class ClientConnection implements PacketReceiver {
 								listenerAction = 4; //onDisconnected
 								break;
 							default:
-								logger.finer("Ignoring " + packet.getMessageType() + " packet because only APPLICATION, PING, PING_RESPONSE and FORCE_DISCONNECT packets are expected");
+								logger.finer("Ignoring " + packet.getMessageType() + " packet because only APPLICATION, PING_RESPONSE and FORCE_DISCONNECT packets are expected");
 								return;
 						}
 					}
@@ -266,12 +261,13 @@ public class ClientConnection implements PacketReceiver {
 		}
 	}
 
-	public void ping() {
+	private void ping() {
 		synchronized(CONNECTION_LOCK) {
 			if(isConnected) {
 				try {
-					sendPacket(Packet.createPingPacket(clientId));
-					logger.finest("Pinging server");
+					long latency = getLatency();
+					sendPacket(Packet.createPingPacket(clientId, latency));
+					logger.finest("Pinging server [" + latency + "ms]");
 				} catch (CouldNotSendPacketException e) {
 					//ignore all exceptions--who cares if we had trouble sending a ping?
 					logger.finest("Could not ping server: " + e.getMessage());
@@ -369,6 +365,9 @@ public class ClientConnection implements PacketReceiver {
 			timeoutThread = null;
 			receivePacketThread = null;
 			recorder.reset();
+			latencyOfMostRecentPackets = new long[ClientConnection.NUM_STORED_LATENCY_PACKETS];
+			for(int i = 0; i < latencyOfMostRecentPackets.length; i++)
+				latencyOfMostRecentPackets[i] = -1;
 		}
 	}
 
@@ -422,7 +421,43 @@ public class ClientConnection implements PacketReceiver {
 	}
 
 	private void handlePingResponse(Packet pingResponse) {
-		//TODO implement
+		//ignore if the ping response is null
+		if(pingResponse == null)
+			return;
+
+		//if the ping response doesn't have a sequence number of the ping it's responding to then we can't do anything
+		if(pingResponse.getLastReceivedSequenceNumber() == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
+			return;
+
+		synchronized(CONNECTION_LOCK) {
+			//if we have no record of when the ping was sent then we can't do anything
+			PacketReceipt pingReceipt = recorder.getSentPacketWithSequenceNumber(pingResponse.getLastReceivedSequenceNumber());
+			if(pingReceipt == null)
+				return;
+
+			//record the latency
+			long timeOfPing = pingReceipt.getTime();
+			long now = System.currentTimeMillis();
+			long timeSincePing = now - timeOfPing;
+			latencyOfMostRecentPackets[lastLatencyIndex] = timeSincePing;
+			lastLatencyIndex++;
+			if(lastLatencyIndex >= latencyOfMostRecentPackets.length)
+				lastLatencyIndex = 0;
+		}
+	}
+
+	public long getLatency() {
+		long totalLatency = 0;
+		int divisor = 0; 
+		for(int i = 0; i < latencyOfMostRecentPackets.length; i++) {
+			if(latencyOfMostRecentPackets[i] >= 0) {
+				totalLatency += latencyOfMostRecentPackets[i];
+				divisor++;
+			}
+		}
+		if(divisor == 0)
+			return -1;
+		return totalLatency/divisor;
 	}
 
 	public static abstract class CouldNotConnectException extends Exception {

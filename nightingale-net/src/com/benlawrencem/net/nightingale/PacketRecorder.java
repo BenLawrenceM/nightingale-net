@@ -5,21 +5,21 @@ import java.util.List;
 
 public class PacketRecorder {
 	private static final int NUM_RECEIVED_PACKETS_STORED = 64;
-	private Packet[] receivedPackets;
+	private PacketReceipt[] receivedPackets;
 	private int receivedPacketHistoryInt;
 	private int lastReceivedPacketIndex;
 	private int lastReceivedPacketSequenceNumber;
 
 	private static final int NUM_SENT_PACKETS_STORED = 64;
-	private Packet[] sentPackets;
+	private PacketReceipt[] sentPackets;
 	private int lastSentPacketIndex;
 	private int lastSentPacketSequenceNumber;
 
 	private int lastSentPacketCheckedForDelivery;
 
 	public PacketRecorder() {
-		receivedPackets = new Packet[PacketRecorder.NUM_RECEIVED_PACKETS_STORED];
-		sentPackets = new Packet[PacketRecorder.NUM_SENT_PACKETS_STORED];
+		receivedPackets = new PacketReceipt[PacketRecorder.NUM_RECEIVED_PACKETS_STORED];
+		sentPackets = new PacketReceipt[PacketRecorder.NUM_SENT_PACKETS_STORED];
 		reset();
 	}
 
@@ -38,7 +38,7 @@ public class PacketRecorder {
 
 		//if we've never received a packet before, our job is easy
 		if(lastReceivedPacketSequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE) {
-			receivedPackets[0] = packet;
+			receivedPackets[0] = new PacketReceipt(packet);
 			receivedPacketHistoryInt = 0;
 			lastReceivedPacketIndex = 0;
 			lastReceivedPacketSequenceNumber = packet.getSequenceNumber();
@@ -47,7 +47,7 @@ public class PacketRecorder {
 			//if our last received packet is really old, our job is almost exactly the same as receiving our first packet
 			int delta = Packet.deltaBetweenSequenceNumbers(lastReceivedPacketSequenceNumber, packet.getSequenceNumber());
 			if(delta >= PacketRecorder.NUM_RECEIVED_PACKETS_STORED) {
-				receivedPackets[0] = packet;
+				receivedPackets[0] = new PacketReceipt(packet);
 				for(int i = 1; i < receivedPackets.length; i++)
 					receivedPackets[i] = null;
 				receivedPacketHistoryInt = 0;
@@ -68,7 +68,7 @@ public class PacketRecorder {
 
 				//add the packet
 				lastReceivedPacketIndex = (lastReceivedPacketIndex + delta) % PacketRecorder.NUM_RECEIVED_PACKETS_STORED;
-				receivedPackets[lastReceivedPacketIndex] = packet;
+				receivedPackets[lastReceivedPacketIndex] = new PacketReceipt(packet);
 				lastReceivedPacketSequenceNumber = packet.getSequenceNumber();
 			}
 
@@ -77,7 +77,7 @@ public class PacketRecorder {
 				int index = lastReceivedPacketIndex + delta;
 				if(index < 0)
 					index += PacketRecorder.NUM_RECEIVED_PACKETS_STORED;
-				receivedPackets[index] = packet;
+				receivedPackets[index] = new PacketReceipt(packet);
 
 				//add a 1 to the correct position in the history int
 				if(delta >= -32) {
@@ -100,7 +100,9 @@ public class PacketRecorder {
 			return undeliveredPackets;
 
 		//if we received null packets (shouldn't be possible) then once again there's no way to tell which packets have been delivered
-		Packet packet = receivedPackets[lastReceivedPacketIndex];
+		if(receivedPackets[lastReceivedPacketIndex] == null)
+			return undeliveredPackets;
+		Packet packet = receivedPackets[lastReceivedPacketIndex].getPacket();
 		if(packet == null)
 			return undeliveredPackets;
 
@@ -133,8 +135,8 @@ public class PacketRecorder {
 					int index = lastSentPacketIndex - delta;
 					if(index < 0)
 						index += PacketRecorder.NUM_SENT_PACKETS_STORED;
-					if(sentPackets[index] != null)
-						undeliveredPackets.add(sentPackets[index]);
+					if(sentPackets[index] != null && sentPackets[index].getPacket() != null)
+						undeliveredPackets.add(sentPackets[index].getPacket());
 				}
 			}
 			lastSentPacketCheckedForDelivery = Packet.nextSequenceNumber(lastSentPacketCheckedForDelivery);
@@ -162,29 +164,29 @@ public class PacketRecorder {
 		lastSentPacketIndex++;
 		if(lastSentPacketIndex == PacketRecorder.NUM_SENT_PACKETS_STORED)
 			lastSentPacketIndex = 0;
-		sentPackets[lastSentPacketIndex] = packet;
+		sentPackets[lastSentPacketIndex] = new PacketReceipt(packet);
 	}
 
 	public synchronized void recordPreviousOutgoingPacketNotSent() {
 		//no-op--the receiving party will recognize the packet has not been received and request a duplicate
 	}
 
-	public synchronized Packet getSentPacketWithSequenceNumber(int sequenceNumber) {
+	public synchronized PacketReceipt getSentPacketWithSequenceNumber(int sequenceNumber) {
 		//ignore N/A sequence numbers
 		if(sequenceNumber == Packet.SEQUENCE_NUMBER_NOT_APPLICABLE)
 			return null;
 
 		//if the sequence number is for a packet in the future then we haven't sent it yet
 		int delta = Packet.deltaBetweenSequenceNumbers(sequenceNumber, lastSentPacketSequenceNumber);
-		if(delta > 0)
+		if(delta < 0)
 			return null;
 
 		//if the sequence number is too far in the past then we won't have a record of it
-		if(delta <= -PacketRecorder.NUM_SENT_PACKETS_STORED)
+		if(delta >= PacketRecorder.NUM_SENT_PACKETS_STORED)
 			return null;
 
 		//return the sent packet
-		int index = lastSentPacketSequenceNumber + delta;
+		int index = (lastSentPacketSequenceNumber - delta) % PacketRecorder.NUM_SENT_PACKETS_STORED;
 		if(index < 0)
 			index += PacketRecorder.NUM_SENT_PACKETS_STORED;
 		return sentPackets[index];

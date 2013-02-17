@@ -231,14 +231,18 @@ public class Server implements PacketReceiver {
 								break;
 							case PING:
 								try {
+									if(packet.getMessage() != null) {
+										try {
+											client.setLatency(Long.parseLong(packet.getMessage()));
+										}
+										catch(NumberFormatException e) {
+											//ignore--just don't modify latency
+										}
+									}
 									sendPacket(Packet.createPingResponsePacket(clientId), client);
 								} catch (CouldNotSendPacketException e) {
 									//ignore all exceptions--we don't need to report that we had trouble responding to a ping
 								}
-								client.resetTimeout();
-								break;
-							case PING_RESPONSE:
-								handlePingResponse(client, packet);
 								client.resetTimeout();
 								break;
 							case CLIENT_DISCONNECT:
@@ -247,7 +251,7 @@ public class Server implements PacketReceiver {
 								listenerAction = 3; //onClientDisconnected
 								break;
 							default:
-								logger.finer("Ignoring " + packet.getMessageType() + " packet from client " + clientId + " because only APPLICATION, PING, PING_RESPONSE and CLIENT_DISCONNECT packets are expected");
+								logger.finer("Ignoring " + packet.getMessageType() + " packet from client " + clientId + " because only APPLICATION, PING and CLIENT_DISCONNECT packets are expected");
 								return;
 						}
 					}
@@ -351,9 +355,6 @@ public class Server implements PacketReceiver {
 		}
 	}
 
-	private void handlePingResponse(ServerClientConnection client, Packet pingResponse) {
-		//TODO implement
-	}
 	private int sendPacket(Packet packet, ServerClientConnection client) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		int sequenceNumber = -1;
 		synchronized(CONNECTION_LOCK) {

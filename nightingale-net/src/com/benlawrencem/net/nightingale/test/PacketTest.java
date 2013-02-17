@@ -1150,16 +1150,16 @@ public class PacketTest extends TestCase {
 	@Test
 	public void testCreatePingPacket() {
 		assertNotNull(pingPacket);
-		assertNotNull(Packet.createPingPacket(Packet.ANONYMOUS_CONNECTION_ID));
-		assertNotNull(Packet.createPingPacket(Packet.MINIMUM_CONNECTION_ID));
-		assertNotNull(Packet.createPingPacket(Packet.MAXIMUM_CONNECTION_ID));
-		assertNotNull(Packet.createPingPacket(0));
-		assertNotNull(Packet.createPingPacket(1));
-		assertNotNull(Packet.createPingPacket(100));
-		assertNotNull(Packet.createPingPacket(254));
-		assertNotNull(Packet.createPingPacket(255));
-		assertEquals(100, Packet.createPingPacket(100).getConnectionId());
-		assertEquals(MessageType.PING, Packet.createPingPacket(100).getMessageType());
+		assertNotNull(Packet.createPingPacket(Packet.ANONYMOUS_CONNECTION_ID, 100));
+		assertNotNull(Packet.createPingPacket(Packet.MINIMUM_CONNECTION_ID, 0));
+		assertNotNull(Packet.createPingPacket(Packet.MAXIMUM_CONNECTION_ID, 3));
+		assertNotNull(Packet.createPingPacket(0, 6));
+		assertNotNull(Packet.createPingPacket(1, 3));
+		assertNotNull(Packet.createPingPacket(100, 38565764));
+		assertNotNull(Packet.createPingPacket(254, -1));
+		assertNotNull(Packet.createPingPacket(255, 7));
+		assertEquals(100, Packet.createPingPacket(100, 4).getConnectionId());
+		assertEquals(MessageType.PING, Packet.createPingPacket(100, 8).getMessageType());
 	}
 
 	@Test
