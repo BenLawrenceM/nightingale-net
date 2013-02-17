@@ -70,10 +70,10 @@ public class CountingServer implements ServerListener {
 	}
 
 	public void onReceive(int clientId, String message) {
-		System.out.println("Received " + message + " from client " + clientId);
+		System.out.println("Received " + message + " from client " + clientId + (server.getLatency(clientId) != -1 ? " [" + server.getLatency(clientId) + "]" : ""));
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending  " + x + " to client " + clientId);
+			System.out.println("Sending  " + x + " to client " + clientId + (server.getLatency(clientId) != -1 ? "   [" + server.getLatency(clientId) + "]" : ""));
 			try {
 				server.send(clientId, "" + x);
 			} catch (CouldNotSendPacketException e) {
