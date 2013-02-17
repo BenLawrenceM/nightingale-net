@@ -2,7 +2,7 @@ package com.benlawrencem.net.nightingale;
 
 import java.net.InetAddress;
 
-public class ServerClientConnection {
+public class ClientInfo {
 	private int connectionId;
 	private String clientAddress;
 	private int clientPort;
@@ -11,7 +11,7 @@ public class ServerClientConnection {
 	private long timeOfLastCommunication;
 	private long latency;
 
-	public ServerClientConnection(int connectionId, String address, int port, InetAddress inetAddress) {
+	public ClientInfo(int connectionId, String address, int port, InetAddress inetAddress) {
 		this.connectionId = connectionId;
 		clientAddress = address;
 		clientPort = port;

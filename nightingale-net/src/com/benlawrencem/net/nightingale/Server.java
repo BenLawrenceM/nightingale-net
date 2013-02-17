@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -36,7 +37,7 @@ public class Server implements PacketReceiver {
 	private boolean isRunning;
 	private ServerTimeoutThread timeoutThread;
 	private ReceivePacketThread receivePacketThread;
-	private Map<Integer, ServerClientConnection> clients;
+	private Map<Integer, ClientInfo> clients;
 	private int lastConnectedClientId;
 
 	public Server(ServerListener listener) {
@@ -79,7 +80,7 @@ public class Server implements PacketReceiver {
 			if(isRunning) {
 				logger.finer("Sending disconnect packets to all clients");
 				for(Integer clientId : clients.keySet()) {
-					ServerClientConnection client = clients.get(clientId);
+					ClientInfo client = clients.get(clientId);
 					try {
 						sendPacket(Packet.createForceDisconnectPacket(clientId, Server.SERVER_STOPPING), client);
 					} catch (CouldNotSendPacketException e) {
@@ -95,12 +96,32 @@ public class Server implements PacketReceiver {
 		logger.fine("Server stopped");
 	}
 
+	public List<Integer> getClientIds() {
+		synchronized(CONNECTION_LOCK) {
+			List<Integer> clientIds = new ArrayList<Integer>();
+			for(Integer clientId: clients.keySet()) {
+				if(clients.get(clientId) != null)
+					clientIds.add(clientId);
+			}
+			return clientIds;
+		}
+	}
+
+	public long getLatency(int clientId) {
+		synchronized(CONNECTION_LOCK) {
+			ClientInfo client = clients.get(clientId);
+			if(client != null)
+				return client.getLatency();
+			return -1;
+		}
+	}
+
 	public void dropClient(int clientId, String reason) {
 		logger.finer("Dropping client " + clientId + ": " + reason);
 		boolean clientDropped = false;
 		synchronized(CONNECTION_LOCK) {
 			if(clients.containsKey(clientId)) {
-				ServerClientConnection client = clients.get(clientId);
+				ClientInfo client = clients.get(clientId);
 				try {
 					sendPacket(Packet.createForceDisconnectPacket(clientId, reason), client);
 				} catch (CouldNotSendPacketException e) {
@@ -128,7 +149,7 @@ public class Server implements PacketReceiver {
 			}
 
 			logger.fine("Sending message to client " + clientId + ": " + message);
-			ServerClientConnection client = clients.get(clientId);
+			ClientInfo client = clients.get(clientId);
 			return sendPacket(packet, client);
 		}
 	}
@@ -145,7 +166,7 @@ public class Server implements PacketReceiver {
 			}
 
 			logger.fine("Resending message to client " + clientId + ": " + message);
-			ServerClientConnection client = clients.get(clientId);
+			ClientInfo client = clients.get(clientId);
 			return sendPacket(packet, client);
 		}
 	}
@@ -196,7 +217,7 @@ public class Server implements PacketReceiver {
 				}
 
 				//ignore packets from unexpected sources
-				ServerClientConnection client = clients.get(clientId);
+				ClientInfo client = clients.get(clientId);
 				if(!client.matchesAddress(address, port)) {
 					logger.finer("Ignoring packet from client " + clientId + " because packet came from " + address + ":" + port + " which does not match the expected " + client.getAddress() + ":" + client.getPort());
 					return;
@@ -316,7 +337,7 @@ public class Server implements PacketReceiver {
 			isRunning = false;
 			timeoutThread = null;
 			receivePacketThread = null;
-			clients = new HashMap<Integer, ServerClientConnection>();
+			clients = new HashMap<Integer, ClientInfo>();
 			lastConnectedClientId = Packet.ANONYMOUS_CONNECTION_ID;
 		}
 	}
@@ -325,7 +346,7 @@ public class Server implements PacketReceiver {
 		boolean clientAccepted = false;
 		synchronized(CONNECTION_LOCK) {
 			try {
-				ServerClientConnection client = new ServerClientConnection(clientId, address, port, InetAddress.getByName(address));
+				ClientInfo client = new ClientInfo(clientId, address, port, InetAddress.getByName(address));
 				sendPacket(Packet.createConnectionAcceptedPacket(clientId), client);
 				clientAccepted = true;
 				clients.put(clientId, client);
@@ -346,7 +367,7 @@ public class Server implements PacketReceiver {
 		logger.fine("Client " + clientId + " was refused");
 		synchronized(CONNECTION_LOCK) {
 			try {
-				sendPacket(Packet.createConnectionRefusedPacket(), new ServerClientConnection(clientId, address, port, InetAddress.getByName(address)));
+				sendPacket(Packet.createConnectionRefusedPacket(), new ClientInfo(clientId, address, port, InetAddress.getByName(address)));
 			} catch (UnknownHostException e) {
 				//ignore exceptions--we don't need to report that we had trouble rejecting a connection
 			} catch (CouldNotSendPacketException e) {
@@ -355,7 +376,7 @@ public class Server implements PacketReceiver {
 		}
 	}
 
-	private int sendPacket(Packet packet, ServerClientConnection client) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
+	private int sendPacket(Packet packet, ClientInfo client) throws ServerNotStartedException, NullPacketException, CouldNotEncodePacketException, PacketIOException {
 		int sequenceNumber = -1;
 		synchronized(CONNECTION_LOCK) {
 			//regardless of whether the packet is valid, if the client is not connected then throw a NotConnectedException
@@ -434,7 +455,7 @@ public class Server implements PacketReceiver {
 			oldestClientCommunicationTime = now; //now is a good default value as it will make the timeout thread wait the full timeout if no clients are connected
 			for(Iterator<Integer> iter = clients.keySet().iterator(); iter.hasNext();) {
 				int clientId = iter.next();
-				ServerClientConnection client = clients.get(clientId);
+				ClientInfo client = clients.get(clientId);
 
 				//if the client has timed out then remove it from the list of clients
 				if(client.getTimeOfLastCommunication() + timeout <= now) {
