@@ -23,7 +23,7 @@ import com.benlawrencem.net.nightingale.Packet.NullPacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 
-public class Server implements PacketReceiver {
+public abstract class Server implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(Server.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
 	private static final int CLIENT_TIMEOUT = 3000;
@@ -32,7 +32,6 @@ public class Server implements PacketReceiver {
 	private static final String DROPPED_BY_SERVER = "Client cropped by server.";
 	private static final String CLIENT_COULD_NOT_CONNECT = "Could not accept client connection.";
 	private static final String CLIENT_TIMED_OUT = "Client timed out.";
-	private ServerListener listener;
 	private DatagramSocket socket;
 	private boolean isRunning;
 	private ServerTimeoutThread timeoutThread;
@@ -40,10 +39,15 @@ public class Server implements PacketReceiver {
 	private Map<Integer, ClientInfo> clients;
 	private int lastConnectedClientId;
 
-	public Server(ServerListener listener) {
-		this.listener = listener;
+	public Server() {
 		resetParameters();
 	}
+
+	protected abstract void onServerStopped();
+	protected abstract boolean onClientConnected(int clientId, String address, int port);
+	protected abstract void onClientDisconnected(int clientId, String reason);
+	protected abstract void onReceive(int clientId, String message);
+	protected abstract void onMessageNotDelivered(int messageId, int resendMessageId, int clientId, String message);
 
 	public void startServer(int port) throws CouldNotStartServerException {
 		logger.fine("Starting server on port " + port + "...");
@@ -91,8 +95,8 @@ public class Server implements PacketReceiver {
 			}
 			closeConnection();
 		}
-		if(wasRunning && listener != null)
-			listener.onServerStopped();
+		if(wasRunning)
+			onServerStopped();
 		logger.fine("Server stopped");
 	}
 
@@ -134,8 +138,8 @@ public class Server implements PacketReceiver {
 				logger.finer("Client " + clientId + " could not be dropped: Client not connected.");
 			}
 		}
-		if(clientDropped && listener != null)
-			listener.onClientDisconnected(clientId, Server.DROPPED_BY_SERVER);
+		if(clientDropped)
+			onClientDisconnected(clientId, Server.DROPPED_BY_SERVER);
 	}
 
 	public int send(int clientId, String message) throws CouldNotSendPacketException {
@@ -281,38 +285,36 @@ public class Server implements PacketReceiver {
 		}
 
 		//execute listener callback--once again, ugly but shouldn't be synchronized
-		if(listener != null) {
-			switch(listenerAction) {
-				case 1: //onClientConnected
-					int clientId = getNextClientId();
-					logger.finest("Client " + clientId + " asking for permission to connect to server");
-					if(listener.onClientConnected(clientId, address ,port)) {
-						logger.finest("Permission to connect granted to client " + clientId);
-						acceptClient(clientId, address, port);
-					}
-					else {
-						logger.finest("Permission to connect refused for client " + clientId);
-						rejectClient(clientId, address, port);
-					}
-					break;
-				case 2: //onReceive
-					listener.onReceive(packet.getConnectionId(), packet.getMessage());
-					break;
-				case 3: //onClientDisconnected
-					listener.onClientDisconnected(packet.getConnectionId(), Server.DISCONNECT_BY_CLIENT);
-					break;
-			}
+		switch(listenerAction) {
+			case 1: //onClientConnected
+				int clientId = getNextClientId();
+				logger.finest("Client " + clientId + " asking for permission to connect to server");
+				if(onClientConnected(clientId, address ,port)) {
+					logger.finest("Permission to connect granted to client " + clientId);
+					acceptClient(clientId, address, port);
+				}
+				else {
+					logger.finest("Permission to connect refused for client " + clientId);
+					rejectClient(clientId, address, port);
+				}
+				break;
+			case 2: //onReceive
+				onReceive(packet.getConnectionId(), packet.getMessage());
+				break;
+			case 3: //onClientDisconnected
+				onClientDisconnected(packet.getConnectionId(), Server.DISCONNECT_BY_CLIENT);
+				break;
+		}
 
-			//inform the listener of any undelivered application messages
-			if(undeliveredPackets != null) {
-				for(Packet undeliveredPacket : undeliveredPackets) {
-					if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
-						listener.onMessageNotDelivered(
-								undeliveredPacket.getSequenceNumber(),
-								(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
-								undeliveredPacket.getConnectionId(),
-								undeliveredPacket.getMessage());
-					}
+		//inform the listener of any undelivered application messages
+		if(undeliveredPackets != null) {
+			for(Packet undeliveredPacket : undeliveredPackets) {
+				if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
+					onMessageNotDelivered(
+							undeliveredPacket.getSequenceNumber(),
+							(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
+							undeliveredPacket.getConnectionId(),
+							undeliveredPacket.getMessage());
 				}
 			}
 		}
@@ -359,8 +361,8 @@ public class Server implements PacketReceiver {
 				logger.fine("Could not accept client " + clientId + " due to CouldNotSendPacketException: " + e.getMessage());
 			}
 		}
-		if(!clientAccepted && listener != null)
-			listener.onClientDisconnected(clientId, Server.CLIENT_COULD_NOT_CONNECT);
+		if(!clientAccepted)
+			onClientDisconnected(clientId, Server.CLIENT_COULD_NOT_CONNECT);
 	}
 
 	private void rejectClient(int clientId, String address, int port) {
@@ -470,11 +472,9 @@ public class Server implements PacketReceiver {
 		}
 
 		//inform the listener of any clients that timed out
-		if(listener != null) {
-			for(int clientId : disconnectedClientIds) {
-				logger.fine("Client " + clientId + " timed out");
-				listener.onClientDisconnected(clientId, Server.CLIENT_TIMED_OUT);
-			}
+		for(int clientId : disconnectedClientIds) {
+			logger.fine("Client " + clientId + " timed out");
+			onClientDisconnected(clientId, Server.CLIENT_TIMED_OUT);
 		}
 
 		//return the time of last communication of the client who is closest to timing out

@@ -7,10 +7,8 @@ import java.util.logging.StreamHandler;
 
 import com.benlawrencem.net.nightingale.Server;
 import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
-import com.benlawrencem.net.nightingale.Server.CouldNotStartServerException;
-import com.benlawrencem.net.nightingale.ServerListener;
 
-public class CountingServer implements ServerListener {
+public class CountingServer extends Server {
 	public static void main(String[] args) {
 		int port = 9876;
 		if(args != null && args.length > 0 && args[0] != null && !args[0].equals("") && !args[0].equals("-") && !args[0].equalsIgnoreCase("default")) {
@@ -41,54 +39,50 @@ public class CountingServer implements ServerListener {
 	}
 
 
-	private Server server;
-
-	public CountingServer() {
-		server = new Server(this);
-	}
+	public CountingServer() {}
 
 	public void startServer(int port) {
 		System.out.println("Starting server on port " + port);
 		try {
-			server.startServer(port);
+			super.startServer(port);
 		} catch (CouldNotStartServerException e) {
 			System.out.println("Could not start server: " + e.getMessage());
 		}
 	}
 
-	public void onServerStopped() {
+	protected void onServerStopped() {
 		System.out.println("Server stopped");
 	}
 
-	public boolean onClientConnected(int clientId, String address, int port) {
+	protected boolean onClientConnected(int clientId, String address, int port) {
 		System.out.println("Client " + clientId + " connected from " + address + ":" + port);
 		return true;
 	}
 
-	public void onClientDisconnected(int clientId, String reason) {
+	protected void onClientDisconnected(int clientId, String reason) {
 		System.out.println("Client " + clientId + " disconnected: " + reason);
 	}
 
-	public void onReceive(int clientId, String message) {
-		System.out.println("Received " + message + " from client " + clientId + (server.getLatency(clientId) != -1 ? " [" + server.getLatency(clientId) + "]" : ""));
+	protected void onReceive(int clientId, String message) {
+		System.out.println("Received " + message + " from client " + clientId + (getLatency(clientId) != -1 ? " [" + getLatency(clientId) + "]" : ""));
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending  " + x + " to client " + clientId + (server.getLatency(clientId) != -1 ? "   [" + server.getLatency(clientId) + "]" : ""));
+			System.out.println("Sending  " + x + " to client " + clientId + (getLatency(clientId) != -1 ? "   [" + getLatency(clientId) + "]" : ""));
 			try {
-				server.send(clientId, "" + x);
+				send(clientId, "" + x);
 			} catch (CouldNotSendPacketException e) {
 				System.out.println("Could not send " + x + " to client " + clientId + ": " + e.getMessage());
 			}
 		} catch(NumberFormatException e) {
-			server.dropClient(clientId, "Sent non-integer packet.");
+			dropClient(clientId, "Sent non-integer packet.");
 			System.out.println("Dropped client " + clientId + " for sending non-integer");
 		}
 	}
 
-	public void onMessageNotDelivered(int messageId, int resendMessageId, int clientId, String message) {
+	protected void onMessageNotDelivered(int messageId, int resendMessageId, int clientId, String message) {
 		System.out.println("Resending " + message + " to client " + clientId);
 		try {
-			server.resend(clientId, resendMessageId, message);
+			resend(clientId, resendMessageId, message);
 		} catch (CouldNotSendPacketException e) {
 			System.out.println("Could not resend " + message + " to client " + clientId + ": " + e.getMessage());
 		}

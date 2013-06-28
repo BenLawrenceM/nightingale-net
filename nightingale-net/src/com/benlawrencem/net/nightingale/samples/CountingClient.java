@@ -6,11 +6,9 @@ import java.util.logging.Logger;
 import java.util.logging.StreamHandler;
 
 import com.benlawrencem.net.nightingale.ClientConnection;
-import com.benlawrencem.net.nightingale.ClientConnection.CouldNotConnectException;
-import com.benlawrencem.net.nightingale.ClientConnectionListener;
 import com.benlawrencem.net.nightingale.Packet.CouldNotSendPacketException;
 
-public class CountingClient implements ClientConnectionListener {
+public class CountingClient extends ClientConnection {
 	public static void main(String[] args) {
 		String address = "198.144.185.152";
 		if(args != null && args.length > 0 && args[0] != null && !args[0].equals("") && !args[0].equals("-") && !args[0].equalsIgnoreCase("default"))
@@ -44,64 +42,60 @@ public class CountingClient implements ClientConnectionListener {
 	}
 
 
-	private ClientConnection conn;
-
-	public CountingClient() {
-		conn = new ClientConnection(this);
-	}
+	public CountingClient() {}
 	
 	public void connect(String address, int port) {
 		System.out.println("Connecting to " + address + ":" + port);
 		try {
-			conn.connect(address, port);
+			super.connect(address, port);
 		} catch (CouldNotConnectException e) {
 			System.out.println("Could not connect: " + e.getMessage());
 		}
 	}
 
-	public void onConnected() {
+	protected void onConnected() {
 		System.out.println("Connected!");
 		System.out.println("Sending 1");
 		try {
-			conn.send("1");
+			send("1");
 		} catch (CouldNotSendPacketException e) {
 			System.out.println("Could not send packet: " + e.getMessage());
-			conn.disconnect();
+			disconnect();
 		}
 	}
 
-	public void onCouldNotConnect(String reason) {
+	protected void onCouldNotConnect(String reason) {
 		System.out.println("Could not connect: " + reason);
 	}
 
-	public void onDisconnected(String reason) {
+	protected void onDisconnected(String reason) {
 		System.out.println("Disconnected: " + reason);
 	}
 
-	public void onReceive(String message) {
-		System.out.println("Received " + message + (conn.getLatency() > -1 ? " [" + conn.getLatency() + "ms]" : ""));
+	protected void onReceive(String message) {
+		System.out.println("Received " + message + (getLatency() > -1 ? " [" + getLatency() + "ms]" : ""));
 		try {
 			int x = Integer.parseInt(message) + 1;
-			System.out.println("Sending  " + x + (conn.getLatency() > -1 ? " [" + conn.getLatency() + "ms]" : ""));
+			System.out.println("Sending  " + x + (getLatency() > -1 ? " [" + getLatency() + "ms]" : ""));
 			try {
-				conn.send("" + x);
+				send("" + x);
 			} catch (CouldNotSendPacketException e) {
 				System.out.println("Could not send " + x + ": " + e.getMessage());
-				conn.disconnect();
+				disconnect();
 			}
 		} catch(NumberFormatException e) {
 			System.out.println("Received non-integer");
-			conn.disconnect();
+			disconnect();
 		}
 	}
 
-	public void onMessageNotDelivered(int messageId, int resendMessageId, String message) {
+	protected void onMessageNotDelivered(int messageId, int resendMessageId, String message) {
 		System.out.println("Resending " + message);
 		try {
-			conn.resend(resendMessageId, message);
+			resend(resendMessageId, message);
 		} catch (CouldNotSendPacketException e) {
 			System.out.println("Could not resend packet: " + e.getMessage());
-			conn.disconnect();
+			disconnect();
 		}
 	}
 }

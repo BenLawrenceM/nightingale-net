@@ -17,7 +17,7 @@ import com.benlawrencem.net.nightingale.Packet.CouldNotEncodePacketException;
 import com.benlawrencem.net.nightingale.Packet.PacketIOException;
 import com.benlawrencem.net.nightingale.Packet.PacketEncodingException;
 
-public class ClientConnection implements PacketReceiver {
+public abstract class ClientConnection implements PacketReceiver {
 	private static final Logger logger = Logger.getLogger(ClientConnection.class.getName());
 	private final Object CONNECTION_LOCK = new Object();
 	private static final int TIME_BETWEEN_PINGS = 1000;
@@ -27,7 +27,6 @@ public class ClientConnection implements PacketReceiver {
 	private static final String CONNECT_REQUEST_TIMED_OUT = "Connect request timed out.";
 	private static final String CONNECTION_TIMED_OUT = "Connection timed out.";
 	private static final String DISCONNECTED_BY_CLIENT = "Disconnect requested by client.";
-	private ClientConnectionListener listener;
 	private DatagramSocket socket;
 	private String serverAddress;
 	private InetAddress serverInetAddress;
@@ -41,11 +40,16 @@ public class ClientConnection implements PacketReceiver {
 	private ReceivePacketThread receivePacketThread;
 	private long latency;
 
-	public ClientConnection(ClientConnectionListener listener) {
-		this.listener = listener;
+	public ClientConnection() {
 		recorder = new PacketRecorder();
 		resetVariables();
 	}
+
+	protected abstract void onConnected();
+	protected abstract void onCouldNotConnect(String reason);
+	protected abstract void onDisconnected(String reason);
+	protected abstract void onReceive(String message);
+	protected abstract void onMessageNotDelivered(int messageId, int resendMessageId, String message);
 
 	public void connect(String address, int port) throws CouldNotConnectException {
 		logger.fine("Connecting to " + address + ":" + port + "...");
@@ -87,8 +91,8 @@ public class ClientConnection implements PacketReceiver {
 			throw new CouldNotSendConnectRequestException(e);
 		}
 		finally {
-			if(disconnected && listener != null) {
-				listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
+			if(disconnected) {
+				onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
 			}
 		}
 	}
@@ -110,8 +114,8 @@ public class ClientConnection implements PacketReceiver {
 				closeConnection();
 			}
 		}
-		if(disconnected && listener != null)
-			listener.onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
+		if(disconnected)
+			onDisconnected(ClientConnection.DISCONNECTED_BY_CLIENT);
 	}
 
 	public int send(String message) throws CouldNotSendPacketException {
@@ -229,31 +233,29 @@ public class ClientConnection implements PacketReceiver {
 		}
 
 		//execute listener callback--once again, ugly but shouldn't be synchronized
-		if(listener != null) {
-			switch(listenerAction) {
-				case 1: //onConnected
-					listener.onConnected();
-					break;
-				case 2: //onCouldNotConnect
-					listener.onCouldNotConnect(ClientConnection.CONNECT_REQUEST_REFUSED);
-					break;
-				case 3: //onReceive
-					listener.onReceive(packet.getMessage());
-					break;
-				case 4: //onDisconnected
-					listener.onDisconnected(disconnectReason);
-					break;
-			}
+		switch(listenerAction) {
+			case 1: //onConnected
+				onConnected();
+				break;
+			case 2: //onCouldNotConnect
+				onCouldNotConnect(ClientConnection.CONNECT_REQUEST_REFUSED);
+				break;
+			case 3: //onReceive
+				onReceive(packet.getMessage());
+				break;
+			case 4: //onDisconnected
+				onDisconnected(disconnectReason);
+				break;
+		}
 
-			//inform the listener of any undelivered application messages
-			if(undeliveredPackets != null) {
-				for(Packet undeliveredPacket : undeliveredPackets) {
-					if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
-						listener.onMessageNotDelivered(
-								undeliveredPacket.getSequenceNumber(),
-								(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
-								undeliveredPacket.getMessage());
-					}
+		//inform the listener of any undelivered application messages
+		if(undeliveredPackets != null) {
+			for(Packet undeliveredPacket : undeliveredPackets) {
+				if(undeliveredPacket.getMessageType() == MessageType.APPLICATION) {
+					onMessageNotDelivered(
+							undeliveredPacket.getSequenceNumber(),
+							(packet.isDuplicate() ? undeliveredPacket.getDuplicateSequenceNumber() : undeliveredPacket.getSequenceNumber()),
+							undeliveredPacket.getMessage());
 				}
 			}
 		}
@@ -310,14 +312,12 @@ public class ClientConnection implements PacketReceiver {
 
 		//once again, exactly one of these could be true, but we're making sure
 		// both don't get run and not assuming one not happening implies the
-		// other happening
-		if(listener != null) {
-			if(timedOutBeforeConnecting) {
-				listener.onCouldNotConnect(ClientConnection.CONNECT_REQUEST_TIMED_OUT);
-			}
-			else if(timedOutAfterConnecting) {
-				listener.onDisconnected(ClientConnection.CONNECTION_TIMED_OUT);
-			}
+		// other happening=
+		if(timedOutBeforeConnecting) {
+			onCouldNotConnect(ClientConnection.CONNECT_REQUEST_TIMED_OUT);
+		}
+		else if(timedOutAfterConnecting) {
+			onDisconnected(ClientConnection.CONNECTION_TIMED_OUT);
 		}
 	}
 
